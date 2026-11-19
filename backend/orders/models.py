@@ -19,12 +19,21 @@ class Order(models.Model):
         PENDING = "pending", "Pending"
         PAID = "paid", "Paid"
         FAILED = "failed", "Failed"
+        REFUNDED = "refunded", "Refunded"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="orders"
     )
     address = models.ForeignKey(
         Address, on_delete=models.SET_NULL, null=True, related_name="orders"
+    )
+    # Money is in BDT. subtotal + shipping_cost = total_amount (all calculated on the server).
+    subtotal = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)]
+    )
+    shipping_method = models.CharField(max_length=20, blank=True)
+    shipping_cost = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)]
     )
     total_amount = models.DecimalField(
         max_digits=10, decimal_places=2, validators=[MinValueValidator(0)]

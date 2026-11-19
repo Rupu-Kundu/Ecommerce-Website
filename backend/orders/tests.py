@@ -171,3 +171,119 @@ class CheckoutTests(CheckoutTestBase):
         self.mouse.refresh_from_db()
         self.assertEqual(self.mouse.stock_quantity, 5)
         self.assertEqual(CartItem.objects.count(), 1)
+
+
+# ======================= Order API (Day 2 · Step 4) =======================
+
+ORDERS_URL = "/api/orders/"
+
+
+class OrderApiTests(CheckoutTestBase):
+    def create_order(self, **overrides):
+        data = {"shipping_method": "standard", "address": dict(ADDRESS)}
+        data.update(overrides)
+        return self.client.post(ORDERS_URL, data, format="json")
+
+    def login_as(self, username, is_staff=False):
+        if not User.objects.filter(username=username).exists():
+            User.objects.create_user(username, f"{username}@example.com", PASSWORD, is_staff=is_staff)
+        access = self.client.post("/api/auth/login/", {"username": username, "password": PASSWORD}).data["access"]
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {access}")
+
+    def mark_paid(self, order_id):
+        Order.objects.filter(pk=order_id).update(status=Order.Status.PAID, payment_status=Order.PaymentStatus.PAID)
+
+    def test_requires_login(self):
+        self.client.credentials()
+        self.assertEqual(self.create_order().status_code, 401)
+        self.assertEqual(self.client.get(ORDERS_URL).status_code, 401)
+
+    def test_create_order_copies_cart_and_saves_totals(self):
+        self.fill_cart((self.mouse, 2), (self.lamp, 1))  # 2000 + 3000 = 5000 → free standard shipping
+        res = self.create_order()
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data["status"], "pending")
+        self.assertEqual(res.data["payment_status"], "pending")
+        self.assertEqual(res.data["subtotal"], "5000.00")
+        self.assertEqual(res.data["shipping_cost"], "0.00")
+        self.assertEqual(res.data["total_amount"], "5000.00")
+        self.assertEqual(res.data["item_count"], 3)
+        self.assertEqual(res.data["address"]["city"], "Dhaka")
+        items = {i["product_name"]: (i["price"], i["quantity"], i["line_total"]) for i in res.data["items"]}
+        self.assertEqual(items, {"Mouse": ("1000.00", 2, "2000.00"), "Lamp": ("3000.00", 1, "3000.00")})
+        # Cart and stock stay untouched until the payment succeeds.
+        self.assertEqual(CartItem.objects.count(), 2)
+        self.mouse.refresh_from_db()
+        self.assertEqual(self.mouse.stock_quantity, 5)
+
+    def test_order_item_price_is_a_snapshot(self):
+        self.fill_cart((self.mouse, 1))
+        order_id = self.create_order().data["id"]
+        self.mouse.price = Decimal("9999.00")
+        self.mouse.save()
+        res = self.client.get(f"{ORDERS_URL}{order_id}/")
+        self.assertEqual(res.data["items"][0]["price"], "1000.00")
+
+    def test_empty_cart_and_stock_change(self):
+        self.assertEqual(self.create_order().status_code, 400)
+        self.fill_cart((self.lamp, 2))
+        self.lamp.stock_quantity = 1
+        self.lamp.save()
+        self.assertEqual(self.create_order().status_code, 409)
+        self.assertEqual(self.create_order().status_code, 201)  # cart was corrected, retry works
+
+    def test_new_order_cancels_previous_unpaid_order(self):
+        self.fill_cart((self.mouse, 1))
+        first = self.create_order().data["id"]
+        second = self.create_order().data["id"]
+        self.assertNotEqual(first, second)
+        self.assertEqual(Order.objects.get(pk=first).status, Order.Status.CANCELLED)
+        self.assertEqual(Order.objects.filter(user=self.user, payment_status=Order.PaymentStatus.PENDING).count(), 1)
+
+    def test_history_lists_only_placed_orders(self):
+        self.fill_cart((self.mouse, 1))
+        order_id = self.create_order().data["id"]
+        self.assertEqual(self.client.get(ORDERS_URL).data["count"], 0)  # unpaid attempt not listed
+        self.mark_paid(order_id)
+        res = self.client.get(ORDERS_URL)
+        self.assertEqual(res.data["count"], 1)
+        self.assertEqual(res.data["results"][0]["id"], order_id)
+
+    def test_customer_sees_only_own_orders(self):
+        self.fill_cart((self.mouse, 1))
+        order_id = self.create_order().data["id"]
+        self.mark_paid(order_id)
+        self.login_as("mallory")
+        self.assertEqual(self.client.get(f"{ORDERS_URL}{order_id}/").status_code, 404)
+        self.assertEqual(self.client.get(ORDERS_URL).data["count"], 0)
+        self.login_as("boss", is_staff=True)
+        self.assertEqual(self.client.get(f"{ORDERS_URL}{order_id}/").status_code, 200)
+        self.assertEqual(self.client.get(ORDERS_URL).data["count"], 1)
+
+    def test_admin_updates_status(self):
+        self.fill_cart((self.mouse, 1))
+        order_id = self.create_order().data["id"]
+        url = f"{ORDERS_URL}{order_id}/status/"
+        # customer cannot
+        self.assertEqual(self.client.patch(url, {"status": "shipped"}, format="json").status_code, 403)
+        self.login_as("boss", is_staff=True)
+        # unpaid order cannot be shipped
+        res = self.client.patch(url, {"status": "shipped"}, format="json")
+        self.assertEqual(res.status_code, 400)
+        self.mark_paid(order_id)
+        for new_status in ("processing", "shipped", "delivered"):
+            res = self.client.patch(url, {"status": new_status}, format="json")
+            self.assertEqual(res.status_code, 200)
+            self.assertEqual(res.data["status"], new_status)
+        self.assertEqual(self.client.patch(url, {"status": "pending"}, format="json").status_code, 400)
+        self.assertEqual(self.client.patch(url, {"status": "teleported"}, format="json").status_code, 400)
+        self.assertEqual(self.client.patch(f"{ORDERS_URL}99999/status/", {"status": "shipped"}, format="json").status_code, 404)
+
+    def test_history_hides_failed_attempts_but_shows_refunds(self):
+        self.fill_cart((self.mouse, 1))
+        failed = self.create_order().data["id"]
+        Order.objects.filter(pk=failed).update(status=Order.Status.CANCELLED, payment_status=Order.PaymentStatus.FAILED)
+        refunded = self.create_order().data["id"]
+        Order.objects.filter(pk=refunded).update(status=Order.Status.CANCELLED, payment_status=Order.PaymentStatus.REFUNDED)
+        ids = [o["id"] for o in self.client.get(ORDERS_URL).data["results"]]
+        self.assertEqual(ids, [refunded])

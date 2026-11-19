@@ -10,11 +10,13 @@ class Payment(models.Model):
     class Provider(models.TextChoices):
         STRIPE = "stripe", "Stripe"
         PAYPAL = "paypal", "PayPal"
+        DEMO = "demo", "Demo test gateway"
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
         SUCCEEDED = "succeeded", "Succeeded"
         FAILED = "failed", "Failed"
+        REFUNDED = "refunded", "Refunded"
 
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="payments")
     user = models.ForeignKey(
@@ -25,6 +27,7 @@ class Payment(models.Model):
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["-created_at"]

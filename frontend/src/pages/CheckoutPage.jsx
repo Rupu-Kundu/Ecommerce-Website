@@ -7,12 +7,9 @@ import Notices from '../components/Notices'
 import OrderSummary from '../components/OrderSummary'
 import useCart from '../context/useCart'
 import { getErrorMessage } from '../services/api'
-import {
-  getSavedAddresses,
-  getShippingMethods,
-  previewShippingCost,
-  submitCheckout,
-} from '../services/checkoutService'
+import { createOrder } from '../services/orderService'
+import { createPaymentSession, getPaymentConfig } from '../services/paymentService'
+import { getSavedAddresses, getShippingMethods, previewShippingCost } from '../services/checkoutService'
 import { formatPrice } from '../utils/format'
 
 const EMPTY_ADDRESS = {
@@ -59,7 +56,7 @@ export default function CheckoutPage() {
   const [shippingMethod, setShippingMethod] = useState('standard')
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
-  const [verified, setVerified] = useState(null) // server-verified summary
+  const [paymentProvider, setPaymentProvider] = useState(null) // 'stripe' | 'demo'
 
   useEffect(() => {
     let cancelled = false
@@ -71,6 +68,7 @@ export default function CheckoutPage() {
           getShippingMethods(),
           getSavedAddresses(),
           refreshCart(),
+          getPaymentConfig().then((c) => !cancelled && setPaymentProvider(c.provider)).catch(() => {}),
         ])
         if (cancelled) return
         setMethods(methodList)
@@ -98,13 +96,11 @@ export default function CheckoutPage() {
     setAddress((a) => ({ ...a, [name]: value }))
     setFieldErrors((errs) => ({ ...errs, [name]: undefined }))
     setSubmitError('')
-    setVerified(null)
   }
 
   async function handleSubmit(event) {
     event.preventDefault()
     setSubmitError('')
-    setVerified(null)
 
     const usingNew = addressChoice === NEW_ADDRESS
     if (usingNew) {
@@ -122,16 +118,12 @@ export default function CheckoutPage() {
 
     setSubmitting(true)
     try {
-      const summary = await submitCheckout(payload)
-      setVerified({ ...summary, previewTotal: previewTotal.toFixed(2) })
-      if (usingNew) {
-        // Newly saved address becomes selectable next time.
-        setSavedAddresses((list) =>
-          list.some((a) => a.id === summary.address.id) ? list : [...list, summary.address],
-        )
-        setAddressChoice(String(summary.address.id))
-        setAddress(EMPTY_ADDRESS)
-      }
+      // 1) Server re-checks the cart, saves the address and creates the order (awaiting payment).
+      const order = await createOrder(payload)
+      // 2) Start a test payment for that order and go to the payment page.
+      const session = await createPaymentSession(order.id)
+      window.location.assign(session.checkout_url)
+      return // keep the button disabled while the browser leaves the page
     } catch (err) {
       const status = err.response?.status
       const data = err.response?.data
@@ -144,8 +136,8 @@ export default function CheckoutPage() {
       } else {
         if (data?.cart) setCart(data.cart)
         setSubmitError(getErrorMessage(err, 'Checkout failed. Please try again.'))
+        if (status === 400) refreshCart().catch(() => {}) // e.g. stock changed when starting payment
       }
-    } finally {
       setSubmitting(false)
     }
   }
@@ -192,8 +184,7 @@ export default function CheckoutPage() {
                       checked={addressChoice === String(a.id)}
                       onChange={(e) => {
                         setAddressChoice(e.target.value)
-                        setVerified(null)
-                      }}
+                                          }}
                       className="mt-1"
                     />
                     <span className="text-sm">
@@ -211,8 +202,7 @@ export default function CheckoutPage() {
                     checked={addressChoice === NEW_ADDRESS}
                     onChange={(e) => {
                       setAddressChoice(e.target.value)
-                      setVerified(null)
-                    }}
+                                      }}
                   />
                   <span className="text-sm font-medium text-slate-900">Use a new address</span>
                 </label>
@@ -257,8 +247,7 @@ export default function CheckoutPage() {
                         checked={shippingMethod === m.code}
                         onChange={(e) => {
                           setShippingMethod(e.target.value)
-                          setVerified(null)
-                        }}
+                                              }}
                       />
                       <span className="text-sm">
                         <span className="font-semibold text-slate-900">{m.label}</span>
@@ -303,27 +292,18 @@ export default function CheckoutPage() {
               </div>
             )}
 
-            {verified ? (
-              <div role="status" className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800" data-testid="checkout-verified">
-                <p className="font-semibold">✓ Address saved and cart verified</p>
-                <p className="mt-1">
-                  Confirmed total: <strong>{formatPrice(verified.total)}</strong>
-                </p>
-                {verified.total !== verified.previewTotal && (
-                  <p className="mt-1 text-amber-700">Prices were updated by the server.</p>
-                )}
-                <p className="mt-1">Ships to: {verified.address.recipient_name}, {formatAddress(verified.address)}</p>
-                <p className="mt-2 text-xs text-emerald-700">Payment will be available in the next step.</p>
-              </div>
-            ) : (
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full rounded-md bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
-              >
-                {submitting ? 'Verifying...' : 'Continue to payment'}
-              </button>
-            )}
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full rounded-full bg-brand-700 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800 disabled:opacity-60"
+            >
+              {submitting ? 'Redirecting to payment…' : `Pay ${formatPrice(previewTotal)}`}
+            </button>
+            <p className="text-center text-xs text-slate-500" data-testid="payment-mode">
+              🔒 {paymentProvider === 'stripe'
+                ? 'Secure payment by Stripe (test mode). Your card details never touch our servers.'
+                : 'Test mode: demo payment gateway — no real money is charged.'}
+            </p>
             <Link to="/cart" className="block text-center text-sm font-medium text-slate-600 hover:text-slate-900">
               ← Back to cart
             </Link>

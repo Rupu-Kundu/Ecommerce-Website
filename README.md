@@ -83,6 +83,8 @@ Product photos: free Unsplash images, credited in [docs/IMAGE_CREDITS.md](docs/I
 | `/cart` | Shopping cart | Logged-in users |
 | `/checkout` | Checkout (address, shipping, summary) | Logged-in users |
 | `/help` | Help center (shipping, returns, payment, FAQ) | Public |
+| `/payment/demo` · `/payment/success` · `/payment/cancel` | Test payment pages | Logged-in users |
+| `/orders` · `/orders/:id` | Order history and order details | Logged-in users |
 | `*` | 404 Not Found | Public |
 
 Auth: the access token is kept in memory, the refresh token in `localStorage`. The Axios client
@@ -145,6 +147,42 @@ All cart endpoints return the full cart: `items`, `total_items`, `subtotal`, `no
 Checkout returns `409` with the updated cart if stock changed. Prices always come from the database.
 Shipping: Standard ৳120 (free over ৳5,000), Express ৳300.
 
+### Orders (`/api/orders/`): login required
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| POST | `/api/orders/` | Customer | `{shipping_method, address \| address_id}`: create an order from the cart (awaits payment) |
+| GET | `/api/orders/` | Customer / Admin | Order history: orders with payment received (paid or refunded). Admins see all |
+| GET | `/api/orders/<id>/` | Owner / Admin | One order (others get 404) |
+| PATCH | `/api/orders/<id>/status/` | Admin | `{status}`: processing / shipped / delivered / cancelled (paid orders only) |
+
+Statuses: Pending → Paid → Processing → Shipped → Delivered (or Cancelled).
+
+### Payments (`/api/payments/`): test mode
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/payments/config/` | Active provider (`stripe` or `demo`) |
+| POST | `/api/payments/session/` | `{order_id}`: start payment → `checkout_url` |
+| POST | `/api/payments/confirm/` | `{session_id}`: server verifies the payment with the provider |
+| POST | `/api/payments/cancel/` | `{order_id}`: customer left the payment page |
+| POST | `/api/payments/demo/complete/` | Demo gateway only: `{session_id, outcome: success\|failure}` |
+| POST | `/api/payments/webhook/` | Stripe webhook (signature verified with `STRIPE_WEBHOOK_SECRET`) |
+
+After a successful payment the server re-checks stock, reduces it, marks the order **Paid** and
+clears the cart. This happens exactly once, even if confirmation arrives twice (redirect + webhook,
+or a page refresh). If stock ran out while paying, the payment is refunded and the order cancelled.
+
+**Test payments**
+
+- **Demo gateway (default):** while `STRIPE_SECRET_KEY` is the placeholder, checkout uses a built-in
+  simulated payment page with *Pay* / *Simulate a failed payment* buttons. No card details, no real money.
+- **Stripe test mode:** put your keys in `backend/.env` (`STRIPE_SECRET_KEY=sk_test_...`) and
+  `frontend/.env` (`VITE_STRIPE_PUBLISHABLE_KEY=pk_test_...`), then restart the servers. Pay with test
+  card `4242 4242 4242 4242`, any future date, any CVC. For webhooks locally:
+  `stripe listen --forward-to localhost:8000/api/payments/webhook/` and copy the printed `whsec_...`
+  into `STRIPE_WEBHOOK_SECRET`.
+
 ### Sample data
 
 ```bash
@@ -169,3 +207,5 @@ python manage.py test
 - [x] Day 2 — Step 1: Shopping Cart API and UI
 - [x] Day 2 — Step 2: Checkout and Address Collection
 - [x] Improvements: BDT currency, 30-product catalogue, Haatbox brand, new navbar & footer
+- [x] Day 2 — Step 3: Payment Test Integration (Stripe test mode + demo gateway)
+- [x] Day 2 — Step 4: Order API and Order History

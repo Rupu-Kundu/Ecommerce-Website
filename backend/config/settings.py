@@ -187,3 +187,12 @@ SIMPLE_JWT = {
     'BLACKLIST_AFTER_ROTATION': True,    # old refresh token can't be reused
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
+
+
+# Payments (Stripe test mode). Keys come from .env and never reach the frontend.
+# While STRIPE_SECRET_KEY is missing or still the placeholder, a built-in demo
+# test gateway is used instead (see payments/gateway.py).
+STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY', '')
+STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
+PAYMENT_CURRENCY = 'bdt'
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173').rstrip('/')

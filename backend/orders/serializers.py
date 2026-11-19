@@ -60,3 +60,73 @@ class CheckoutSerializer(serializers.Serializer):
                 raise serializers.ValidationError({"address_id": "Address not found."})
             attrs["address_obj"] = address
         return attrs
+
+
+# ---------------- Orders ----------------
+
+from .models import Order, OrderItem  # noqa: E402
+from .shipping import SHIPPING_METHODS as _METHODS  # noqa: E402
+
+
+class OrderItemSerializer(serializers.ModelSerializer):
+    product_id = serializers.IntegerField(source="product.id", read_only=True, default=None)
+    image = serializers.SerializerMethodField()
+    line_total = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OrderItem
+        fields = ("id", "product_id", "product_name", "price", "quantity", "line_total", "image")
+
+    def get_line_total(self, obj):
+        return f"{obj.price * obj.quantity:.2f}"
+
+    def get_image(self, obj):
+        if obj.product and obj.product.image:
+            request = self.context.get("request")
+            url = obj.product.image.url
+            return request.build_absolute_uri(url) if request else url
+        return None
+
+
+class OrderSerializer(serializers.ModelSerializer):
+    items = OrderItemSerializer(many=True, read_only=True)
+    address = AddressSerializer(read_only=True)
+    shipping_method_label = serializers.SerializerMethodField()
+    item_count = serializers.SerializerMethodField()
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+    payment_status_label = serializers.CharField(source="get_payment_status_display", read_only=True)
+
+    class Meta:
+        model = Order
+        fields = (
+            "id", "status", "status_label", "payment_status", "payment_status_label",
+            "subtotal", "shipping_method", "shipping_method_label", "shipping_cost", "total_amount",
+            "item_count", "items", "address", "created_at", "updated_at",
+        )
+        read_only_fields = fields
+
+    def get_shipping_method_label(self, obj):
+        return _METHODS.get(obj.shipping_method, {}).get("label", obj.shipping_method)
+
+    def get_item_count(self, obj):
+        return sum(item.quantity for item in obj.items.all())
+
+
+# Order statuses that only make sense once the payment has been received.
+REQUIRES_PAYMENT = {
+    Order.Status.PAID, Order.Status.PROCESSING, Order.Status.SHIPPED, Order.Status.DELIVERED,
+}
+
+
+class OrderStatusUpdateSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=Order.Status.choices)
+
+    def validate_status(self, value):
+        order = self.context["order"]
+        if value == Order.Status.PENDING:
+            raise serializers.ValidationError("An order cannot be moved back to pending.")
+        if value in REQUIRES_PAYMENT and order.payment_status != Order.PaymentStatus.PAID:
+            raise serializers.ValidationError(
+                f"Order #{order.pk} is not paid; it cannot be marked {value}."
+            )
+        return value

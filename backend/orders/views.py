@@ -1,15 +1,25 @@
-from django.db import transaction
+from django.db.models import Prefetch
+from django.shortcuts import get_object_or_404
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.settings import api_settings
 from rest_framework.views import APIView
 
 from accounts.models import Address
-from cart.serializers import serialize_cart
-from cart.services import cart_items, cart_subtotal, get_cart, sync_cart
+from accounts.permissions import IsAdmin
 
-from .serializers import AddressSerializer, CheckoutSerializer
-from .shipping import SHIPPING_METHODS, shipping_cost, shipping_methods_payload
+from .models import Order, OrderItem
+from .serializers import (
+    AddressSerializer,
+    CheckoutSerializer,
+    OrderSerializer,
+    OrderStatusUpdateSerializer,
+)
+from .services import CheckoutProblem, create_order, prepare_checkout
+from .shipping import SHIPPING_METHODS, shipping_methods_payload
+
+# ---------------- Checkout (Day 2 · Step 2) ----------------
 
 
 class ShippingMethodListView(APIView):
@@ -34,50 +44,23 @@ class SavedAddressListView(generics.ListAPIView):
 class CheckoutView(APIView):
     """
     POST /api/checkout/  {shipping_method, address | address_id}
-
-    Server-side checkout verification:
-      1. Validate the shipping address and shipping method.
-      2. Re-check the cart against current stock (removes/adjusts items).
-         If anything changed → 409 with the updated cart so the user can review it.
-      3. Recalculate prices from the database (client prices are never trusted).
-      4. Save the address to the user's account.
-    Returns the verified order summary. The order itself is created after payment (next step).
+    Verifies the cart and address and returns the server-calculated summary
+    (no order is created here — see POST /api/orders/).
     """
 
     def post(self, request):
         serializer = CheckoutSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
+        try:
+            checkout = prepare_checkout(request, serializer.validated_data)
+        except CheckoutProblem as problem:
+            return problem.response
 
-        cart = get_cart(request.user)
-        with transaction.atomic():
-            notices = sync_cart(cart)
-            items = list(cart_items(cart))
-
-            if not items:
-                return Response(
-                    {"detail": "Your cart is empty.", "cart": serialize_cart(cart, request, notices)},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            if notices:
-                return Response(
-                    {
-                        "detail": "Your cart changed because of stock updates. Please review it.",
-                        "cart": serialize_cart(cart, request, notices),
-                    },
-                    status=status.HTTP_409_CONFLICT,
-                )
-
-            address = data.get("address_obj") or self.save_address(request.user, data["address"])
-
-        subtotal = cart_subtotal(items)
-        method_code = data["shipping_method"]
-        shipping = shipping_cost(method_code, subtotal)
-        method = SHIPPING_METHODS[method_code]
-
+        items = checkout["items"]
+        method = checkout["shipping_method"]
         return Response(
             {
-                "address": AddressSerializer(address).data,
+                "address": AddressSerializer(checkout["address"]).data,
                 "items": [
                     {
                         "product_id": item.product.id,
@@ -89,18 +72,75 @@ class CheckoutView(APIView):
                     for item in items
                 ],
                 "total_items": sum(item.quantity for item in items),
-                "subtotal": f"{subtotal:.2f}",
-                "shipping_method": {"code": method_code, "label": method["label"]},
-                "shipping_cost": f"{shipping:.2f}",
-                "total": f"{subtotal + shipping:.2f}",
+                "subtotal": f"{checkout['subtotal']:.2f}",
+                "shipping_method": {"code": method, "label": SHIPPING_METHODS[method]["label"]},
+                "shipping_cost": f"{checkout['shipping_cost']:.2f}",
+                "total": f"{checkout['total']:.2f}",
             }
         )
 
-    @staticmethod
-    def save_address(user, fields):
-        """Reuse an identical saved address instead of creating duplicates."""
-        existing = Address.objects.filter(user=user, **fields).first()
-        if existing:
-            return existing
-        is_first = not Address.objects.filter(user=user).exists()
-        return Address.objects.create(user=user, is_default=is_first, **fields)
+
+# ---------------- Orders (Day 2 · Step 4) ----------------
+
+
+def orders_for(user):
+    qs = Order.objects.select_related("address").prefetch_related(
+        Prefetch("items", queryset=OrderItem.objects.select_related("product"))
+    )
+    # Customers only ever see their own orders; admins see everyone's.
+    return qs if user.is_staff else qs.filter(user=user)
+
+
+class OrderListCreateView(APIView):
+    """
+    GET  /api/orders/   order history — orders whose payment was received (paid, or
+                        refunded). Unpaid or failed checkout attempts are not listed.
+    POST /api/orders/   {shipping_method, address | address_id} — create an order from the cart.
+                        The order waits for payment; see /api/payments/.
+    """
+
+    def get(self, request):
+        queryset = orders_for(request.user).filter(
+            payment_status__in=[Order.PaymentStatus.PAID, Order.PaymentStatus.REFUNDED]
+        )
+        paginator = api_settings.DEFAULT_PAGINATION_CLASS()
+        page = paginator.paginate_queryset(queryset, request, view=self)
+        data = OrderSerializer(page, many=True, context={"request": request}).data
+        return paginator.get_paginated_response(data)
+
+    def post(self, request):
+        serializer = CheckoutSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        try:
+            checkout = prepare_checkout(request, serializer.validated_data)
+        except CheckoutProblem as problem:
+            return problem.response
+        order = create_order(request, checkout)
+        order = orders_for(request.user).get(pk=order.pk)
+        return Response(
+            OrderSerializer(order, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class OrderDetailView(APIView):
+    """GET /api/orders/<id>/ — one order (owner or admin; others get 404)."""
+
+    def get(self, request, pk):
+        order = get_object_or_404(orders_for(request.user), pk=pk)
+        return Response(OrderSerializer(order, context={"request": request}).data)
+
+
+class OrderStatusUpdateView(APIView):
+    """PATCH /api/orders/<id>/status/ {status} — admin only."""
+
+    permission_classes = [IsAdmin]
+
+    def patch(self, request, pk):
+        order = get_object_or_404(Order, pk=pk)
+        serializer = OrderStatusUpdateSerializer(data=request.data, context={"order": order})
+        serializer.is_valid(raise_exception=True)
+        order.status = serializer.validated_data["status"]
+        order.save(update_fields=["status", "updated_at"])
+        order = orders_for(request.user).get(pk=order.pk)
+        return Response(OrderSerializer(order, context={"request": request}).data)

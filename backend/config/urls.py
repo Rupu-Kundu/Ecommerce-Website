@@ -4,12 +4,16 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
+from orders.urls import order_urlpatterns
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/auth/', include('accounts.urls')),
     path('api/', include('products.urls')),
     path('api/cart/', include('cart.urls')),
     path('api/checkout/', include('orders.urls')),
+    path('api/orders/', include(order_urlpatterns)),
+    path('api/payments/', include('payments.urls')),
 ]
 
 # Serve uploaded media files during development only

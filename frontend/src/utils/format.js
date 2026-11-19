@@ -10,3 +10,8 @@ export function formatPrice(value) {
   const number = Number(value)
   return Number.isFinite(number) ? `৳${numberFormatter.format(number)}` : value
 }
+
+/** "2026-11-20T10:00:00Z" → "20 Nov 2026" */
+export function formatDate(iso) {
+  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+}
