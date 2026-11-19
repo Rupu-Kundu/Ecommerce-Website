@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 import os
+from datetime import timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -46,6 +47,7 @@ INSTALLED_APPS = [
 
     # Third-party
     'rest_framework',
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
 
     # Local apps
@@ -160,6 +162,28 @@ CORS_ALLOWED_ORIGINS = [
 
 # Django REST Framework
 REST_FRAMEWORK = {
+    # Every API request is authenticated with a JWT "Authorization: Bearer <token>" header
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    # Secure by default: endpoints need login unless a view explicitly allows guests
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 12,
+}
+
+
+# JWT (lifetimes come from .env)
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(
+        minutes=int(os.getenv('JWT_ACCESS_TOKEN_LIFETIME_MINUTES', '30'))
+    ),
+    'REFRESH_TOKEN_LIFETIME': timedelta(
+        days=int(os.getenv('JWT_REFRESH_TOKEN_LIFETIME_DAYS', '1'))
+    ),
+    'ROTATE_REFRESH_TOKENS': True,       # refresh returns a new refresh token
+    'BLACKLIST_AFTER_ROTATION': True,    # old refresh token can't be reused
+    'AUTH_HEADER_TYPES': ('Bearer',),
 }
