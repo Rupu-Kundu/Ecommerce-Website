@@ -49,6 +49,8 @@ cd backend
 python3.11 -m venv venv
 source venv/bin/activate          # Windows: venv\Scripts\activate
 pip install -r requirements.txt
+python manage.py migrate          # create database tables
+python manage.py createsuperuser  # admin login for /admin/
 python manage.py runserver        # http://127.0.0.1:8000
 ```
 
@@ -64,3 +66,4 @@ npm run dev                       # http://localhost:5173
 
 - [x] Day 1 — Step 1: Project Planning and Setup
 - [x] Day 1 — Step 2: Environment Setup
+- [x] Day 1 — Step 3: Database and Backend Models
