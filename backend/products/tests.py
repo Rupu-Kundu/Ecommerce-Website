@@ -223,3 +223,28 @@ class SeedCommandTests(APITestCase):
         call_command("seed_products", verbosity=0)
         self.assertEqual(Category.objects.count(), cats)
         self.assertEqual(Product.objects.count(), prods)
+
+
+class PriceCurrencyMigrationTests(APITestCase):
+    """The one-time USD → BDT migration uses a single fixed rate and rounds to whole taka."""
+
+    def test_usd_to_bdt_conversion_and_reverse(self):
+        import importlib
+
+        from django.apps import apps
+
+        migration = importlib.import_module("products.migrations.0002_convert_prices_usd_to_bdt")
+        cat = Category.objects.create(name="Gadgets", slug="gadgets")
+        a = Product.objects.create(name="A", category=cat, price=Decimal("49.99"))
+        b = Product.objects.create(name="B", category=cat, price=Decimal("899.00"))
+
+        migration.usd_to_bdt(apps, None)
+        a.refresh_from_db()
+        b.refresh_from_db()
+        self.assertEqual(migration.USD_TO_BDT, Decimal("120"))
+        self.assertEqual(a.price, Decimal("5999"))     # 49.99 × 120 = 5998.8 → 5999
+        self.assertEqual(b.price, Decimal("107880"))   # 899 × 120
+
+        migration.bdt_to_usd(apps, None)
+        b.refresh_from_db()
+        self.assertEqual(b.price, Decimal("899.00"))

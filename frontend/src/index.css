@@ -1,12 +1,37 @@
 @import "tailwindcss";
 
+/*
+  Haatbox brand theme
+  - brand: deep emerald green (trust, freshness — a nod to Bangladesh's green)
+  - accent: warm amber (highlights, badges)
+  - font: Plus Jakarta Sans (loaded in index.html)
+*/
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --color-brand-50: #ecfdf6;
+  --color-brand-100: #d1fae9;
+  --color-brand-200: #a6f2d4;
+  --color-brand-300: #6be3bb;
+  --color-brand-400: #2fcb9c;
+  --color-brand-500: #0fb183;
+  --color-brand-600: #05906b;
+  --color-brand-700: #067358;
+  --color-brand-800: #085b47;
+  --color-brand-900: #094b3c;
+  --color-brand-950: #032a22;
+
+  --color-accent-300: #fcd34d;
+  --color-accent-400: #fbbf24;
+  --color-accent-500: #f59e0b;
+}
+
 @layer base {
   html {
-    font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
 
   body {
-    @apply bg-slate-50 text-slate-900;
+    @apply bg-slate-50 font-sans text-slate-900;
   }
 }

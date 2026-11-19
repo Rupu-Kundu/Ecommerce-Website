@@ -1,8 +1,16 @@
-import { Outlet } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Outlet, useLocation } from 'react-router-dom'
 import Footer from './Footer'
 import Navbar from './Navbar'
 
 export default function Layout() {
+  const { pathname, hash } = useLocation()
+
+  // Start each new page at the top (links in the footer would otherwise keep the scroll position).
+  useEffect(() => {
+    if (!hash) window.scrollTo(0, 0)
+  }, [pathname, hash])
+
   return (
     <div className="flex min-h-screen flex-col bg-slate-50">
       <Navbar />

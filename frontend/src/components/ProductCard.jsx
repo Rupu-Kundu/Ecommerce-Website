@@ -17,7 +17,7 @@ export default function ProductCard({ product }) {
         <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
           {product.category_name}
         </span>
-        <h3 className="line-clamp-2 font-semibold text-slate-900 group-hover:text-indigo-700">
+        <h3 className="line-clamp-2 font-semibold text-slate-900 group-hover:text-brand-700">
           {product.name}
         </h3>
         <div className="mt-auto flex items-center justify-between pt-2">

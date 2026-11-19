@@ -91,7 +91,7 @@ export default function ProductListPage() {
   const totalPages = Math.ceil(data.count / PAGE_SIZE)
   const hasFilters = search || category || ordering !== '-created_at'
   const selectClass =
-    'rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200'
+    'rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200'
 
   return (
     <div>
@@ -106,9 +106,9 @@ export default function ProductListPage() {
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Search products..."
             aria-label="Search products"
-            className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+            className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
           />
-          <button type="submit" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+          <button type="submit" className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
             Search
           </button>
         </form>
@@ -147,7 +147,7 @@ export default function ProductListPage() {
             {data.count} {data.count === 1 ? 'product' : 'products'} found
           </span>
           {hasFilters && (
-            <button type="button" onClick={() => setSearchParams({})} className="font-medium text-indigo-700 hover:underline">
+            <button type="button" onClick={() => setSearchParams({})} className="font-medium text-brand-700 hover:underline">
               Clear filters
             </button>
           )}

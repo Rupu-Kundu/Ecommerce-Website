@@ -42,14 +42,18 @@ export default function HomePage() {
   return (
     <div className="space-y-12">
       {/* Hero */}
-      <section className="rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-12 text-white sm:px-10 sm:py-16">
-        <h1 className="text-3xl font-bold sm:text-4xl">Shop smart. Shop easy.</h1>
-        <p className="mt-3 max-w-xl text-indigo-100">
-          Electronics, clothing, books, and home essentials — all in one place.
+      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-800 via-brand-700 to-brand-600 px-6 py-12 text-white sm:px-12 sm:py-16">
+        <div aria-hidden="true" className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-accent-400/20 blur-3xl" />
+        <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 right-24 h-64 w-64 rounded-full bg-brand-300/20 blur-3xl" />
+        <p className="relative text-sm font-semibold uppercase tracking-widest text-accent-300">Welcome to Haatbox</p>
+        <h1 className="relative mt-2 max-w-xl text-3xl font-extrabold tracking-tight sm:text-5xl">Shop smart. Live better.</h1>
+        <p className="relative mt-4 max-w-xl text-brand-100">
+          Electronics, fashion, books, home, sports and beauty — delivered across Bangladesh.
+          Free standard delivery on orders over ৳5,000.
         </p>
         <Link
           to="/products"
-          className="mt-6 inline-block rounded-lg bg-white px-5 py-2.5 font-semibold text-indigo-700 shadow hover:bg-indigo-50"
+          className="relative mt-7 inline-block rounded-full bg-white px-6 py-3 font-semibold text-brand-800 shadow-lg shadow-brand-950/20 transition hover:-translate-y-0.5 hover:bg-brand-50"
         >
           Browse products
         </Link>
@@ -68,7 +72,7 @@ export default function HomePage() {
                   <Link
                     key={category.id}
                     to={`/products?category=${category.slug}`}
-                    className="rounded-full border border-slate-300 bg-white px-4 py-1.5 text-sm font-medium text-slate-700 hover:border-indigo-400 hover:text-indigo-700"
+                    className="rounded-full border border-slate-300 bg-white px-4 py-1.5 text-sm font-medium text-slate-700 hover:border-brand-400 hover:text-brand-700"
                   >
                     {category.name}
                   </Link>
@@ -80,7 +84,7 @@ export default function HomePage() {
           <section>
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-xl font-bold text-slate-900">New arrivals</h2>
-              <Link to="/products" className="text-sm font-medium text-indigo-700 hover:underline">
+              <Link to="/products" className="text-sm font-medium text-brand-700 hover:underline">
                 View all →
               </Link>
             </div>
