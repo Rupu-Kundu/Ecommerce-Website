@@ -60,7 +60,7 @@ class DemoGatewayTests(PaymentTestBase):
         self.assertEqual(res.data["currency"], "BDT")
         self.assertEqual(
             [(m["code"], m["provider"], m["available"], m["demo"]) for m in res.data["methods"]],
-            [("card", "demo", True, True), ("bkash", "demo", True, True), ("nagad", "demo", True, True)],
+            [("card", "demo", True, True), ("bkash", "demo", True, True), ("nagad", "demo", True, True), ("cod", "cod", True, False)],
         )
 
     def test_start_payment_creates_pending_payment(self):
@@ -162,7 +162,7 @@ class StripeGatewayTests(PaymentTestBase):
 
     def test_config_reports_stripe_for_card(self):
         methods = {m["code"]: m["provider"] for m in self.client.get("/api/payments/config/").data["methods"]}
-        self.assertEqual(methods, {"card": "stripe", "bkash": "demo", "nagad": "demo"})
+        self.assertEqual(methods, {"card": "stripe", "bkash": "demo", "nagad": "demo", "cod": "cod"})
 
     def test_stripe_payment_cannot_be_completed_on_demo_page(self):
         self.start_stripe()

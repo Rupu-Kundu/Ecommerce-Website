@@ -19,12 +19,18 @@ class Order(models.Model):
         CARD = "card", "Card"
         BKASH = "bkash", "bKash"
         NAGAD = "nagad", "Nagad"
+        COD = "cod", "Cash on delivery"
 
     class PaymentStatus(models.TextChoices):
         PENDING = "pending", "Pending"
         PAID = "paid", "Paid"
         FAILED = "failed", "Failed"
         REFUNDED = "refunded", "Refunded"
+        # Cash on delivery: order confirmed, the customer pays the rider (→ PAID when delivered).
+        DUE = "due", "Pay on delivery"
+
+    # Orders the customer has really placed (paid online, or confirmed for cash on delivery).
+    PLACED_PAYMENT_STATUSES = ("paid", "refunded", "due")
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="orders"

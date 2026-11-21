@@ -19,7 +19,8 @@ export default function Layout() {
         <Outlet />
       </main>
       <Footer />
-      <ChatWidget />
+      {/* Customer chat; the admin dashboard has its own Live chat inbox instead. */}
+      {!pathname.startsWith('/admin-dashboard') && <ChatWidget />}
     </div>
   )
 }

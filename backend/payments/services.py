@@ -7,8 +7,14 @@ Payment lifecycle:
                    page refresh, double click) never creates a second order or
                    reduces stock twice.
   fail_payment   → payment failed/cancelled: order cancelled, stock untouched.
+  place_cod_order → cash on delivery: re-check + reduce stock, confirm the order
+                   (status Processing, payment "Pay on delivery"), clear the cart.
+                   The admin marking it Delivered turns the payment into Paid.
 """
 
+import uuid
+
+from django.conf import settings
 from django.db import transaction
 
 from cart.models import CartItem
@@ -142,3 +148,45 @@ def fail_payment(transaction_id):
     if order.payment_status == Order.PaymentStatus.PENDING:
         cancel_unpaid_order(order)
     return payment
+
+
+def place_cod_order(order, user):
+    """Confirm an unpaid order as cash on delivery. Raises PaymentError with a friendly message."""
+    problem = None
+    with transaction.atomic():
+        order = Order.objects.select_for_update().get(pk=order.pk)
+        if order.payment_method != Order.PaymentMethod.COD:
+            raise PaymentError(f"Order #{order.pk} is not a cash-on-delivery order.")
+        if order.payment_status != Order.PaymentStatus.PENDING or order.status != Order.Status.PENDING:
+            raise PaymentError(f"Order #{order.pk} has already been placed.")
+        if not gateway.cod_enabled():
+            raise PaymentError("Cash on delivery is not available right now.")
+        items = list(order.items.all())
+        products = {p.pk: p for p in Product.objects.select_for_update().filter(pk__in=[i.product_id for i in items])}
+        problems = check_stock(order, products)
+        if order.total_amount > settings.COD_MAX_AMOUNT:
+            problem = (f"Cash on delivery is available for orders up to ৳{settings.COD_MAX_AMOUNT:,.0f}. "
+                       "Please pay online with Card, bKash or Nagad.")
+        elif problems:
+            problem = " ".join(problems) + " Please review your cart and check out again."
+        if problem:
+            # Cancel the unusable order and COMMIT that before reporting the problem
+            # (raising inside this block would roll the cancellation back).
+            cancel_unpaid_order(order)
+        else:
+            for item in items:
+                product = products[item.product_id]
+                product.stock_quantity -= item.quantity
+                product.save(update_fields=["stock_quantity", "updated_at"])
+            Payment.objects.create(
+                order=order, user=user, provider=Payment.Provider.COD,
+                transaction_id=f"cod_{uuid.uuid4().hex}", amount=order.total_amount,
+            )
+            order.status = Order.Status.PROCESSING
+            order.payment_status = Order.PaymentStatus.DUE
+            order.save(update_fields=["status", "payment_status", "updated_at"])
+            if order.from_cart:
+                CartItem.objects.filter(cart__user=order.user).delete()
+    if problem:
+        raise PaymentError(problem)
+    return order

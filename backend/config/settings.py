@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 import os
+from decimal import Decimal
 import sys
 from datetime import timedelta
 from pathlib import Path
@@ -72,6 +73,7 @@ INSTALLED_APPS = [
     'orders',
     'payments',
     'assistant',
+    'support',
 ]
 
 MIDDLEWARE = [
@@ -175,6 +177,17 @@ AUTH_USER_MODEL = 'accounts.User'
 # Only the listed frontend origins may call the API from a browser (never "allow all").
 CORS_ALLOWED_ORIGINS = env_list('CORS_ALLOWED_ORIGINS')
 CSRF_TRUSTED_ORIGINS = env_list('CSRF_TRUSTED_ORIGINS')
+# Live chat: the AI answers while the team is away (see support/auto_reply.py).
+SUPPORT_AUTO_REPLY = env_bool('SUPPORT_AUTO_REPLY', True)
+# If an admin is online, wait this long for a human answer before the AI replies.
+SUPPORT_AUTO_REPLY_AFTER_SECONDS = int(os.getenv('SUPPORT_AUTO_REPLY_AFTER_SECONDS', '120'))
+# An admin counts as online for this long after their last Live chat / dashboard request.
+SUPPORT_AGENT_ONLINE_SECONDS = int(os.getenv('SUPPORT_AGENT_ONLINE_SECONDS', '60'))
+
+# Guests prove they own a live chat with this header (see support/views.py).
+from corsheaders.defaults import default_headers  # noqa: E402
+
+CORS_ALLOW_HEADERS = (*default_headers, 'x-support-token')
 
 
 # Django REST Framework
@@ -202,6 +215,9 @@ REST_FRAMEWORK = {
         'auth': '10000/minute' if TESTING else os.getenv('THROTTLE_AUTH', '10/minute'),
         # AI assistant: protects the Claude API bill from abuse
         'chat': '10000/minute' if TESTING else os.getenv('THROTTLE_CHAT', '20/minute'),
+        # Live chat: both sides poll every few seconds, sending is limited separately
+        'support_poll': '10000/minute' if TESTING else os.getenv('THROTTLE_SUPPORT_POLL', '120/minute'),
+        'support_send': '10000/minute' if TESTING else os.getenv('THROTTLE_SUPPORT_SEND', '20/minute'),
     },
 }
 
@@ -247,6 +263,9 @@ NAGAD_PG_PUBLIC_KEY = os.getenv('NAGAD_PG_PUBLIC_KEY', '')
 # On by default in development and tests; OFF in production unless explicitly allowed,
 # so a missing gateway configuration can never lead to unpaid "paid" orders.
 PAYMENTS_ALLOW_DEMO = env_bool('PAYMENTS_ALLOW_DEMO', DEBUG or TESTING)
+# Cash on delivery (customer pays the rider). On by default, for orders up to COD_MAX_AMOUNT (BDT).
+PAYMENTS_ALLOW_COD = env_bool('PAYMENTS_ALLOW_COD', True)
+COD_MAX_AMOUNT = Decimal(os.getenv('COD_MAX_AMOUNT', '50000'))
 
 
 # ---------------- Security headers & HTTPS ----------------

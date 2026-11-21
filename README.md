@@ -84,11 +84,11 @@ Product photos: free Unsplash images, credited in [docs/IMAGE_CREDITS.md](docs/I
 | `/login` | Login | Guests only |
 | `/register` | Registration | Guests only |
 | `/cart` | Shopping cart | Logged-in users |
-| `/checkout` | Checkout (address, shipping, summary) | Logged-in users |
-| `/help` | Help center (shipping, returns, payment, FAQ) | Public |
+| `/checkout` | Checkout (address + optional map pin, shipping, payment) | Logged-in users |
+| `/help` | Help center (shipping, returns, payment, FAQ, store map) | Public |
 | `/payment/demo` · `/payment/success` · `/payment/cancel` | Test payment pages | Logged-in users |
 | `/orders` · `/orders/:id` | Order history and order details | Logged-in users |
-| `/admin-dashboard` (+ `/products`, `/categories`, `/orders`) | Admin dashboard | Admins only |
+| `/admin-dashboard` (+ `/products`, `/categories`, `/orders`, `/chat`) | Admin dashboard, incl. Live chat inbox | Admins only |
 | `*` | 404 Not Found | Public |
 
 Auth: the access token is kept in memory, the refresh token in `localStorage`. The Axios client
@@ -118,16 +118,34 @@ Send the access token as `Authorization: Bearer <access>`. Admins are users with
 | GET | `/api/categories/` | Public | All categories |
 | POST | `/api/products/` | Admin | Create (JSON, or multipart for `image`) |
 | PUT / PATCH | `/api/products/<id>/` | Admin | Update |
-| DELETE | `/api/products/<id>/` | Admin | Delete |
+| DELETE | `/api/products/<id>/` | Admin | Delete (also removes its photo files) |
+| POST | `/api/products/<id>/images/` | Admin | Add a gallery photo (multipart `image`, `alt_text?`; up to 8) |
+| DELETE | `/api/products/<id>/images/<image_id>/` | Admin | Remove a gallery photo |
+| GET | `/api/products/<id>/reviews/` | Public | `{summary: {average, count, distribution}, my_review, results}` |
+| POST | `/api/products/<id>/reviews/` | Customer | `{rating 1–5, comment?}`: add or update your review (one per customer) |
+| DELETE | `/api/products/<id>/reviews/<review_id>/` | Owner / Admin | Delete a review |
+
+Each product has `brand`, `specifications` (product details table: `[{label, value}]`, up to 20 rows), `image` (main
+photo), `images` (gallery photos), `average_rating` and `rating_count`. Reviews from customers with a paid order for the
+product are marked **Verified purchase**. On the product page customers can hover to magnify, click to open a full-screen
+viewer and zoom 1×–3× (tap and drag on phones).
 
 Query parameters for `GET /api/products/`:
 
-- `search=phone`: searches name, description, and category name
+- `search=phone`: searches name, brand, description, and category name
 - `category=electronics`: filter by category slug (or id)
-- `ordering=price` / `ordering=-price`: sort by price (also `created_at`, `name`)
+- `ordering=price` / `ordering=-price`: sort by price (also `created_at`, `name`, `-rating_score` = top rated)
 - `page=2`: next page
 
 Guests and customers only see products with `is_available=true`; admins see all.
+
+**Cash on delivery (COD):** customers can choose *COD* at checkout (orders up to `COD_MAX_AMOUNT`, default ৳50,000;
+switch off with `PAYMENTS_ALLOW_COD=False`). The order is confirmed straight away and stock is reserved. When the admin
+marks it **Delivered**, the payment becomes *Paid* (cash collected). **Cancelled** returns the stock, and a cancelled COD
+order can't be reopened.
+
+**Categories:** Electronics, Clothing, Shoes, Watches, Earbuds & Audio, Perfumes, Beauty & Personal Care, Books,
+Home & Kitchen, Home Decor, Sports & Outdoors, Cat Supplies, Medical & Health, Baby Products.
 
 ### Cart (`/api/cart/`): login required
 
@@ -166,8 +184,9 @@ Statuses: Pending → Paid → Processing → Shipped → Delivered (or Cancelle
 
 | Method | Endpoint | Description |
 |---|---|---|
-| GET | `/api/payments/config/` | Payment methods (`card`, `bkash`, `nagad`), each with its provider and whether it is a demo |
+| GET | `/api/payments/config/` | Payment methods (`card`, `bkash`, `nagad`, `cod`), each with its provider and whether it is a demo |
 | POST | `/api/payments/session/` | `{order_id}`: start payment → `checkout_url` |
+| POST | `/api/payments/cod/` | `{order_id}`: place a **cash-on-delivery** order (stock reserved, status *Processing*, payment *Pay on delivery*) |
 | POST | `/api/payments/confirm/` | `{session_id, status?}`: server verifies the payment with Stripe / bKash / Nagad |
 | POST | `/api/payments/cancel/` | `{order_id}`: customer left the payment page |
 | POST | `/api/payments/demo/complete/` | Demo gateway only: `{session_id, outcome: success\|failure}` |
@@ -211,18 +230,57 @@ See [docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md) for setup and test credentials.
 
 | Method | Endpoint | Description |
 |---|---|---|
-| GET | `/api/chat/config/` | `{enabled}`: whether `ANTHROPIC_API_KEY` is set |
-| POST | `/api/chat/` | `{messages: [{role, content}]}` → `{reply, cart_updated}` (guests welcome; rate-limited, `THROTTLE_CHAT`) |
+| GET | `/api/chat/config/` | `{enabled, mode}`: `mode` is `"ai"` (Claude, `ANTHROPIC_API_KEY` set) or `"basic"` (built-in auto-reply bot) |
+| POST | `/api/chat/` | `{messages: [{role, content}]}` → `{reply, cart_updated, handoff, mode}` (guests welcome; rate-limited, `THROTTLE_CHAT`) |
 
 A chat button on every page opens **Haatbox Assistant**, powered by Claude (`claude-opus-5-5`, Messages API with tools, run inside Django).
 It answers in English or Bangla and uses tools that read the real database: product search and details, categories,
 store info (shipping and payments), **the logged-in customer's own orders**, and **add to cart**.
-Set `ANTHROPIC_API_KEY` in `backend/.env` to switch it on. Without it, the widget shows "offline".
+When the customer wants a person (or has a problem the AI can't solve), the AI calls its `request_human_agent` tool
+and a **Chat with our team** button hands the conversation over to live chat.
+**The chat always answers automatically.** With `ANTHROPIC_API_KEY` in `backend/.env` it uses Claude. Without a key (or if the
+Claude API is down) the **built-in auto-reply bot** (`backend/assistant/basic.py`) answers instead, with no cost: product search with
+prices and links (English, Bangla, Banglish, budgets like "২০০০ টাকার মধ্যে"), delivery, payment, returns, store location,
+categories, the customer's orders and "add … to my cart". Anything it can't handle goes to the team.
+
+### Live chat with the team (`/api/support/`)
+
+Customers (guests too) chat with real people; admins answer from **Admin dashboard → Live chat**. Both sides poll every
+few seconds (no WebSocket server needed). Guests prove ownership with a random token (`X-Support-Token` header; only its hash is stored).
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/support/conversations/` | Start a chat `{message, name?, transcript?}` → `{conversation, messages, token?}` (transcript = AI chat to share) |
+| GET | `/api/support/conversations/mine/` | Logged-in customer's open chat |
+| GET / POST | `/api/support/conversations/<id>/messages/` | New messages (`?after=<id>&seen=1`) / send a message |
+| POST | `/api/support/conversations/<id>/close/` | Customer ends the chat |
+| GET | `/api/support/admin/conversations/?status=open\|closed\|all` | Admin: chat list with unread counts |
+| GET | `/api/support/admin/summary/` | Admin: `{open, unread}` (menu badge) |
+| GET / POST | `/api/support/admin/conversations/<id>/messages/` | Admin: read (marks read) / reply |
+| PATCH | `/api/support/admin/conversations/<id>/` | Admin: `{status: "open" \| "closed"}` |
+
+| GET | `/api/support/status/` | `{team_online, auto_reply}` (shown before a chat starts) |
+
+Rate limits: `THROTTLE_SUPPORT_POLL` (default 120/minute) and `THROTTLE_SUPPORT_SEND` (20/minute).
+
+**AI auto-reply in live chat** (`backend/support/auto_reply.py`): when a customer writes and the team is away (no admin has the
+dashboard open), the AI answers at once and says a person will follow up. When an admin is online, the AI waits
+`SUPPORT_AUTO_REPLY_AFTER_SECONDS` (default 120) for a human reply first. It never answers twice, never after a human has replied,
+and admins can switch it off per chat (**AI auto-reply: On/Off**). Settings: `SUPPORT_AUTO_REPLY`, `SUPPORT_AUTO_REPLY_AFTER_SECONDS`,
+`SUPPORT_AGENT_ONLINE_SECONDS`. "Team online" is kept in Django's cache; with several server processes in production use a shared
+cache (Redis or the database cache).
+
+### Maps
+
+Maps use **OpenStreetMap + Leaflet** (free, no API key; loaded only on pages with a map).
+- **Checkout:** customers can drop a pin (or use their device location) for the rider. It is saved on the address
+  (`latitude`, `longitude`; both or neither) and shown on the order page for the customer and the admin, with a *Get directions* link.
+- **Help → Visit our store** (`/help#visit`, also *Find our store* in the footer): the store's location.
 
 ### Sample data
 
 ```bash
-python manage.py seed_products --with-images   # 6 categories, 30 products (BDT) + photos (safe to run again)
+python manage.py seed_products --with-images   # 14 categories, 65 products (BDT) with brand, details + 2 photos each (safe to run again)
 python manage.py seed_demo_users               # demo_admin / demo_customer (see docs/DEMO_GUIDE.md)
 ```
 

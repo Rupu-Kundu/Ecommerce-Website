@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { formatPrice } from '../utils/format'
 import ProductImage from './ProductImage'
+import StarRating from './product/StarRating'
 
 export default function ProductCard({ product }) {
   const navigate = useNavigate()
@@ -19,6 +20,11 @@ export default function ProductCard({ product }) {
           <h3 className="line-clamp-2 font-semibold text-slate-900 group-hover:text-brand-700">
             {product.name}
           </h3>
+          {product.rating_count > 0 ? (
+            <StarRating value={product.average_rating} count={product.rating_count} />
+          ) : (
+            <span className="text-xs text-slate-400">No ratings yet</span>
+          )}
           <div className="mt-auto flex items-center justify-between pt-2">
             <span className="text-lg font-bold text-slate-900">{formatPrice(product.price)}</span>
             <span className={`text-xs font-medium ${inStock ? 'text-emerald-600' : 'text-red-600'}`}>

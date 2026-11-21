@@ -162,7 +162,7 @@ export default function Navbar() {
               <Icon name="chevron" className={`h-4 w-4 transition-transform ${categoriesOpen ? 'rotate-180' : ''}`} />
             </button>
             {categoriesOpen && (
-              <div className="absolute left-0 top-full mt-2 w-64 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl shadow-slate-900/10" role="menu">
+              <div className="absolute left-0 top-full mt-2 grid w-[30rem] grid-cols-2 gap-x-1 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl shadow-slate-900/10" role="menu">
                 {categories.map((c) => (
                   <Link
                     key={c.id}
@@ -173,8 +173,8 @@ export default function Navbar() {
                     {c.name}
                   </Link>
                 ))}
-                <div className="my-1 border-t border-slate-100" />
-                <Link to="/products" role="menuitem" className="block rounded-xl px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50">
+                <div className="col-span-2 my-1 border-t border-slate-100" />
+                <Link to="/products" role="menuitem" className="col-span-2 block rounded-xl px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50">
                   All products →
                 </Link>
               </div>

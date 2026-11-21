@@ -13,6 +13,7 @@ const SORT_OPTIONS = [
   { value: '-created_at', label: 'Newest' },
   { value: 'price', label: 'Price: low to high' },
   { value: '-price', label: 'Price: high to low' },
+  { value: '-rating_score', label: 'Top rated' },
   { value: 'name', label: 'Name: A–Z' },
 ]
 

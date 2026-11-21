@@ -14,7 +14,7 @@ from orders.views import orders_for
 
 from . import gateway
 from .models import Payment
-from .services import PaymentError, fail_payment, fulfil_payment, start_payment
+from .services import PaymentError, fail_payment, fulfil_payment, place_cod_order, start_payment
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +92,24 @@ class CreatePaymentSessionView(APIView):
             )
         return Response(
             {"provider": payment.provider, "session_id": payment.transaction_id, "checkout_url": url, "order_id": order.pk},
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class CashOnDeliveryView(APIView):
+    """POST /api/payments/cod/ {order_id} — place your unpaid order as cash on delivery."""
+
+    def post(self, request):
+        serializer = OrderIdSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        order = get_object_or_404(Order, pk=serializer.validated_data["order_id"], user=request.user)
+        try:
+            order = place_cod_order(order, request.user)
+        except PaymentError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"order_id": order.pk, "status": order.status, "payment_status": order.payment_status,
+             "amount_due": f"{order.total_amount:.2f}"},
             status=status.HTTP_201_CREATED,
         )
 

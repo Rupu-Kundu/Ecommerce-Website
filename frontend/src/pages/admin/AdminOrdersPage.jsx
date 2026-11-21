@@ -44,7 +44,7 @@ export default function AdminOrdersPage() {
     try {
       const updated = await updateOrderStatus(order.id, newStatus)
       setData((d) => ({ ...d, results: d.results.map((o) => (o.id === order.id ? updated : o)) }))
-      setRowMessage((m) => ({ ...m, [order.id]: { type: 'ok', text: `Updated to ${updated.status_label}` } }))
+      setRowMessage((m) => ({ ...m, [order.id]: { type: 'ok', text: updated.payment_method === 'cod' && newStatus === 'delivered' ? 'Delivered · cash collected' : `Updated to ${updated.status_label}` } }))
     } catch (err) {
       setRowMessage((m) => ({ ...m, [order.id]: { type: 'error', text: getErrorMessage(err, 'Update failed') } }))
     } finally {
@@ -107,7 +107,7 @@ export default function AdminOrdersPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      {o.payment_status === 'paid' ? (
+                      {o.payment_status === 'paid' || (o.payment_status === 'due' && o.status !== 'cancelled') ? (
                         <select
                           aria-label={`Status for order ${o.id}`}
                           value={o.status}
@@ -115,7 +115,7 @@ export default function AdminOrdersPage() {
                           onChange={(e) => changeStatus(o, e.target.value)}
                           className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium"
                         >
-                          {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{label(s)}</option>)}
+                          {STATUS_OPTIONS.filter((s) => !(o.payment_status === 'due' && s === 'paid')).map((s) => <option key={s} value={s}>{label(s)}</option>)}
                         </select>
                       ) : (
                         <OrderStatusBadge status={o.status} label={o.status_label} />

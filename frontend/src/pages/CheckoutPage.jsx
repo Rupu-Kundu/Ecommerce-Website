@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import ErrorMessage from '../components/ErrorMessage'
 import FormField from '../components/FormField'
+import { LazyLocationPicker } from '../components/map/LazyMaps'
 import Loader from '../components/Loader'
 import Notices from '../components/Notices'
 import OrderSummary from '../components/OrderSummary'
@@ -9,7 +10,7 @@ import PaymentMethodPicker from '../components/PaymentMethodPicker'
 import useCart from '../context/useCart'
 import { getErrorMessage } from '../services/api'
 import { createOrder } from '../services/orderService'
-import { createPaymentSession, getPaymentConfig } from '../services/paymentService'
+import { createPaymentSession, getPaymentConfig, placeCodOrder } from '../services/paymentService'
 import { getSavedAddresses, getShippingMethods, previewShippingCost } from '../services/checkoutService'
 import { getProduct } from '../services/productService'
 import { formatPrice } from '../utils/format'
@@ -44,6 +45,7 @@ function formatAddress(a) {
 
 export default function CheckoutPage() {
   const { cart, refreshCart, setCart, clearNotices } = useCart()
+  const navigate = useNavigate()
   // "Buy now": /checkout?buy=<productId>&qty=<n> checks out just that product (cart untouched).
   const [params] = useSearchParams()
   const buyId = params.get('buy')
@@ -59,6 +61,7 @@ export default function CheckoutPage() {
 
   const [addressChoice, setAddressChoice] = useState(NEW_ADDRESS)
   const [address, setAddress] = useState(EMPTY_ADDRESS)
+  const [pin, setPin] = useState(null) // optional map pin {lat, lng}
   const [fieldErrors, setFieldErrors] = useState({})
   const [shippingMethod, setShippingMethod] = useState('standard')
   const [submitting, setSubmitting] = useState(false)
@@ -109,6 +112,8 @@ export default function CheckoutPage() {
   const previewShipping = previewShippingCost(selectedMethod, subtotal)
   const previewTotal = subtotal + previewShipping
   const payment = paymentMethods.find((m) => m.code === paymentMethod)
+  const cod = paymentMethod === 'cod'
+  const codTooLarge = cod && payment?.max_amount && previewTotal > Number(payment.max_amount)
 
   function handleAddressChange(event) {
     const { name, value } = event.target
@@ -135,15 +140,26 @@ export default function CheckoutPage() {
       setSubmitError('Please choose a payment method.')
       return
     }
+    if (codTooLarge) {
+      setSubmitError(`Cash on delivery is available for orders up to ${formatPrice(payment.max_amount)}. Please choose Card, bKash or Nagad.`)
+      return
+    }
     const payload = { shipping_method: shippingMethod, payment_method: paymentMethod }
     if (buyProduct) payload.items = [{ product_id: buyProduct.id, quantity: buyQty }]
-    if (usingNew) payload.address = address
+    if (usingNew) payload.address = pin ? { ...address, latitude: pin.lat, longitude: pin.lng } : address
     else payload.address_id = Number(addressChoice)
 
     setSubmitting(true)
     try {
       // 1) Server re-checks the cart, saves the address and creates the order (awaiting payment).
       const order = await createOrder(payload)
+      if (cod) {
+        // 2a) Cash on delivery: confirm the order now; the customer pays the rider.
+        await placeCodOrder(order.id)
+        if (!buyProduct) refreshCart().catch(() => {})
+        navigate(`/orders/${order.id}?placed=cod`)
+        return
+      }
       // 2) Start a test payment for that order and go to the payment page.
       const session = await createPaymentSession(order.id)
       window.location.assign(session.checkout_url)
@@ -217,6 +233,7 @@ export default function CheckoutPage() {
                       <span className="font-semibold text-slate-900">{a.recipient_name}</span> · {a.phone}
                       <br />
                       <span className="text-slate-600">{formatAddress(a)}</span>
+                      {a.latitude != null && <span className="mt-0.5 block text-xs font-medium text-brand-700">📍 Map pin saved</span>}
                     </span>
                   </label>
                 ))}
@@ -249,6 +266,23 @@ export default function CheckoutPage() {
                   <FormField label="City" name="city" autoComplete="address-level2" value={address.city} onChange={handleAddressChange} error={fieldErrors.city} />
                   <FormField label="Postal code" name="postal_code" autoComplete="postal-code" value={address.postal_code} onChange={handleAddressChange} error={fieldErrors.postal_code} />
                   <FormField label="Country" name="country" autoComplete="country-name" value={address.country} onChange={handleAddressChange} error={fieldErrors.country} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-700">
+                    Pin your location <span className="font-normal text-slate-500">(optional — helps the rider find you)</span>
+                  </h3>
+                  <div className="mt-2">
+                    <LazyLocationPicker
+                      value={pin}
+                      onChange={(p) => {
+                        setPin(p)
+                        setFieldErrors((errs) => ({ ...errs, latitude: undefined, longitude: undefined }))
+                      }}
+                    />
+                  </div>
+                  {(fieldErrors.latitude || fieldErrors.longitude) && (
+                    <p className="mt-1 text-sm text-red-600">{[].concat(fieldErrors.latitude || fieldErrors.longitude).join(' ')}</p>
+                  )}
                 </div>
               </div>
             )}
@@ -339,13 +373,19 @@ export default function CheckoutPage() {
               className="w-full rounded-full bg-brand-700 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800 disabled:opacity-60"
             >
               {submitting
-                ? 'Redirecting to payment…'
-                : `Pay ${formatPrice(previewTotal)}${payment ? ` with ${payment.label}` : ''}`}
+                ? cod ? 'Placing your order…' : 'Redirecting to payment…'
+                : cod
+                  ? `Place order · Pay ${formatPrice(previewTotal)} on delivery`
+                  : `Pay ${formatPrice(previewTotal)}${payment ? ` with ${payment.label}` : ''}`}
             </button>
             <p className="text-center text-xs text-slate-500" data-testid="payment-mode">
-              🔒 {!payment
+              {cod ? '💵 ' : '🔒 '}{!payment
                 ? 'Choose how you want to pay.'
-                : payment.demo
+                : cod
+                  ? codTooLarge
+                    ? `Cash on delivery is for orders up to ${formatPrice(payment.max_amount)}.`
+                    : 'No online payment needed — pay the rider in cash when your order arrives.'
+                  : payment.demo
                   ? `Test mode: simulated ${payment.label} payment — no real money is charged.`
                   : `You'll pay securely on the ${payment.label === 'Card' ? 'Stripe' : payment.label} page. We never see your card, PIN or OTP.`}
             </p>

@@ -110,6 +110,24 @@ class CheckoutTests(CheckoutTestBase):
         self.assertIn("country", res.data["address"])
         self.assertFalse(Address.objects.exists())
 
+    def test_map_pin_is_saved_and_validated(self):
+        self.fill_cart((self.mouse, 1))
+        for bad in ({"latitude": 23.79}, {"latitude": 123, "longitude": 90.4}, {"latitude": 23.7, "longitude": 190}):
+            res = self.checkout(address=dict(ADDRESS, **bad))
+            self.assertEqual(res.status_code, 400, bad)
+        self.assertFalse(Address.objects.exists())
+        res = self.checkout(address=dict(ADDRESS, latitude=23.793712345678, longitude=90.406612345678))
+        self.assertIn(res.status_code, (200, 201), res.data)
+        address = Address.objects.get()
+        self.assertEqual((str(address.latitude), str(address.longitude)), ("23.793712", "90.406612"))
+        saved = self.client.get("/api/checkout/addresses/").data
+        saved = saved["results"] if isinstance(saved, dict) else saved
+        self.assertEqual(saved[0]["latitude"], "23.793712")
+        # no pin is fine too
+        res = self.checkout(address=dict(ADDRESS, street_address="9 Other Road"))
+        self.assertIn(res.status_code, (200, 201), res.data)
+        self.assertIsNone(Address.objects.get(street_address="9 Other Road").latitude)
+
     def test_requires_exactly_one_address_source(self):
         self.fill_cart((self.mouse, 1))
         res = self.client.post(CHECKOUT_URL, {"shipping_method": "standard"}, format="json")

@@ -21,7 +21,8 @@ function toFormData(fields) {
   Object.entries(fields).forEach(([key, value]) => {
     if (value === undefined || value === null) return
     if (key === 'image' && !(value instanceof File)) return
-    form.append(key, typeof value === 'boolean' ? String(value) : value)
+    if (typeof value === 'object' && !(value instanceof Blob)) form.append(key, JSON.stringify(value)) // e.g. specifications
+    else form.append(key, typeof value === 'boolean' ? String(value) : value)
   })
   return form
 }
@@ -65,4 +66,17 @@ export async function getAdminOrders(params = {}) {
 export async function updateOrderStatus(id, status) {
   const { data } = await api.patch(`/orders/${id}/status/`, { status })
   return data
+}
+
+/** Add a gallery photo to a product (multipart). */
+export async function uploadProductImage(productId, file, altText = '') {
+  const form = new FormData()
+  form.append('image', file)
+  if (altText) form.append('alt_text', altText)
+  const { data } = await api.post(`/products/${productId}/images/`, form)
+  return data
+}
+
+export async function deleteProductImage(productId, imageId) {
+  await api.delete(`/products/${productId}/images/${imageId}/`)
 }

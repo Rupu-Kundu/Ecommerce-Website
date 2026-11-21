@@ -37,6 +37,10 @@ Use this before every deployment. "✅" items are already handled in the code. "
 
 ## Input validation & data integrity
 
+- ✅ Reviews: login required, one per customer per product (database constraint), rating 1–5 (database check), comment ≤ 1,000 characters, rendered as plain text. Only the author or an admin can delete a review.
+- ✅ Gallery photos: admin only, must be real images (Pillow check), up to 8 per product; files are deleted with the photo/product.
+- ✅ Product details: up to 20 rows, label ≤ 60 and value ≤ 200 characters, rendered as text.
+
 - ✅ All input is validated by DRF serializers: prices > 0, stock ≥ 0, phone and postal-code formats, valid shipping method, image files only.
 - ✅ Prices and totals are always calculated on the server. Prices sent by the client are ignored.
 - ✅ Stock can never go negative. It is a `PositiveIntegerField`, re-checked under a database lock before it is reduced, and payments are refunded if stock ran out.
@@ -44,6 +48,8 @@ Use this before every deployment. "✅" items are already handled in the code. "
 
 ## Payments
 
+- ✅ Cash on delivery: the server re-checks stock and reserves it under a row lock, enforces `COD_MAX_AMOUNT`, and only the
+  order's owner can place it. Payment becomes *Paid* only when an admin marks the order Delivered; cancelling returns the stock once.
 - ✅ Card details never touch the server (Stripe Checkout hosted page, or the demo gateway that takes no card data).
 - ✅ Payment success is verified with Stripe on the server, never trusted from the browser.
 - ✅ Stripe webhooks are rejected unless the `Stripe-Signature` matches `STRIPE_WEBHOOK_SECRET`.
@@ -70,6 +76,22 @@ Use this before every deployment. "✅" items are already handled in the code. "
 - ✅ Replies are rendered as text: no HTML, and only internal links (`/products/…`, `/orders/…`) are clickable.
 - ✅ Rate-limited (`THROTTLE_CHAT`, default 20/minute), with message length (2,000) and history (20 turns) limits, to protect the API bill.
 - ☐ Set a monthly spend limit for the API key in the Claude Console.
+
+## Live chat
+
+- ✅ A chat is visible only to its owner: the logged-in customer, or a guest holding the random token (sent as `X-Support-Token`; only a SHA-256 hash is stored). Anyone else gets 404.
+- ✅ Admin inbox endpoints require `is_staff`; customers get 403. Agent usernames are never shown to customers.
+- ✅ Messages are plain text (max 2,000 characters) and rendered without HTML. Customers are told not to send card numbers, PINs or OTPs.
+- ✅ Separate rate limits for polling (`THROTTLE_SUPPORT_POLL`) and sending (`THROTTLE_SUPPORT_SEND`).
+- ✅ CORS allows the `X-Support-Token` header only for the listed frontend origins.
+- ✅ AI auto-replies use the same tools and rules as the assistant (guests: no orders/cart; logged-in: only their own data), are labelled "AI assistant (auto-reply)", never reply twice to the same message, and a failed bot never breaks the customer's request.
+- ☐ Production with several server processes: use a shared cache (Redis or the database cache) so "team online" and rate limits are shared.
+
+## Maps
+
+- ✅ The map pin is optional, validated (latitude −90…90, longitude −180…180, both or neither) and visible only to the customer and admins.
+- ✅ Location is read from the device only when the customer clicks **Use my current location** (browser asks permission).
+- ☐ OpenStreetMap's public tiles are fine for a demo; for heavy production traffic use a tile provider (their usage policy).
 
 ## Errors & logging
 

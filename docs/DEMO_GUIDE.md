@@ -54,9 +54,11 @@ Open **http://localhost:5173**.
 These are for local demos only. Override them with `DEMO_ADMIN_PASSWORD` / `DEMO_CUSTOMER_PASSWORD`.
 The command refuses to run when `DJANGO_DEBUG=False`.
 
-## 5. Test payments: Card, bKash, Nagad
+## 5. Test payments: Card, bKash, Nagad, Cash on delivery
 
-At checkout the customer picks **Card**, **bKash** or **Nagad**. **Buy now** (on product cards and product pages)
+At checkout the customer picks **Card**, **bKash**, **Nagad** or **COD (cash on delivery)**.
+With COD the button reads *Place order · Pay ৳… on delivery*; the order is placed at once (no payment page) and the order
+page says "Pay on delivery". In *Admin → Orders* set it to **Delivered** ("cash collected") or **Cancelled** (stock returned). **Buy now** (on product cards and product pages)
 skips the cart and checks out just that product.
 
 - **Default, demo gateway:** any method without credentials opens a simulated page. Nothing typed there is sent anywhere.
@@ -89,7 +91,39 @@ Then click **Ask Haatbox AI** (bottom-right) and try:
 - "How much is delivery?"
 - As `demo_customer`: "Where is my order?" and "Add a yoga mat to my cart"
 
-Without a key, the chat window says the assistant is offline. Every other part of the shop works normally.
+**Without a key the chat still answers automatically** with the built-in auto-reply bot (header: *Auto-reply*). Try the same
+questions; it answers product, price, delivery, payment, return and order questions in English or Bangla.
+
+## 5c. Live chat with the team (AI → person)
+
+Use two browser windows (or one normal + one private window):
+
+1. **Customer window:** open the chat (bottom-right). With the AI on, ask something and tap **Talk to a person**
+   (or ask the AI "I want to talk to a person" — it shows a **Chat with our team** button and shares the AI chat).
+   Without an API key the chat opens on live chat directly. Write a message and click **Start chat**.
+2. **Admin window:** log in as `demo_admin` → **Admin dashboard**. The **Live chat** tab shows a red unread badge.
+   Open the chat, read it (guests are marked *guest*, AI hand-offs *from AI*) and reply.
+3. The customer sees the reply within a few seconds. If their chat window is closed, the chat button shows a badge.
+4. Admin clicks **Close chat**; the customer sees "This chat has ended" (writing again reopens it).
+
+**Auto-reply:** while no admin has the dashboard open, the AI answers the customer instantly ("Our team is offline … the AI
+assistant is answering"). With the admin dashboard open, the AI waits 2 minutes for a human first. In the chat header the
+admin can switch **AI auto-reply** On/Off for that chat.
+
+## 5d. Maps
+
+- **Checkout:** under the address form, tap the map to drop a pin (or **Use my current location**), then pay.
+  The order page shows the pin with a *Get directions* link (customer and admin).
+- **Help → Visit our store** (footer: *Find our store*) shows the store on a map.
+
+## 5e. Product photos, zoom, details and ratings
+
+- Open any product: two or more photos with thumbnails. Hover to magnify, click for the full-screen viewer, use + / − or
+  tap to zoom (1×–3×), ← → to switch photos, Esc to close.
+- *Product details* shows brand, category, product code, availability and the specifications table.
+- *Ratings & reviews*: log in as `demo_customer`, click **Write a review**, pick stars, add a comment. Edit it later;
+  customers who bought the product get a **✓ Verified purchase** badge. Products list → sort **Top rated**.
+- Admin → Products → **Edit**: brand, product details rows and **More photos (gallery)** (add/remove photos).
 
 ## 6. Five-minute demo script
 
@@ -116,6 +150,7 @@ Without a key, the chat window says the assistant is offline. Every other part o
 ```bash
 cd backend && source venv/bin/activate
 python manage.py shell -c "from orders.models import Order; Order.objects.all().delete()"
+python manage.py shell -c "from support.models import Conversation; Conversation.objects.all().delete()"
 python manage.py seed_demo_users          # resets demo passwords
 ```
 

@@ -154,3 +154,35 @@ def cancel_unpaid_order(order):
     order.payment_status = Order.PaymentStatus.FAILED
     order.save(update_fields=["status", "payment_status", "updated_at"])
     order.payments.filter(status=Payment.Status.PENDING).update(status=Payment.Status.FAILED)
+
+
+@transaction.atomic
+def change_order_status(order, new_status):
+    """
+    Admin status change. Cash-on-delivery side effects:
+      - delivered → the rider collected the cash: payment becomes Paid,
+      - cancelled → nothing was paid, so the reserved stock goes back.
+    """
+    from payments.models import Payment  # avoid a circular import
+
+    order = Order.objects.select_for_update().get(pk=order.pk)
+    previous = order.status
+    order.status = new_status
+    fields = ["status", "updated_at"]
+    if order.payment_status == Order.PaymentStatus.DUE:
+        cod_payments = order.payments.filter(provider=Payment.Provider.COD, status=Payment.Status.PENDING)
+        if new_status == Order.Status.DELIVERED:
+            order.payment_status = Order.PaymentStatus.PAID
+            fields.append("payment_status")
+            cod_payments.update(status=Payment.Status.SUCCEEDED)
+        elif new_status == Order.Status.CANCELLED and previous != Order.Status.CANCELLED:
+            items = list(order.items.all())
+            products = {p.pk: p for p in Product.objects.select_for_update().filter(pk__in=[i.product_id for i in items])}
+            for item in items:
+                product = products.get(item.product_id)
+                if product:
+                    product.stock_quantity += item.quantity
+                    product.save(update_fields=["stock_quantity", "updated_at"])
+            cod_payments.update(status=Payment.Status.FAILED)
+    order.save(update_fields=fields)
+    return order

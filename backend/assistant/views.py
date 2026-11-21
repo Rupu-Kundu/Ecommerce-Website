@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
-from .service import AssistantUnavailable, assistant_enabled, run_chat
+from .service import AssistantUnavailable, assistant_mode, run_chat
 
 MAX_TURNS = 20
 MAX_CHARS = 2000
@@ -28,17 +28,20 @@ class ChatRequestSerializer(serializers.Serializer):
 
 
 class ChatConfigView(APIView):
-    """GET /api/chat/config/ — whether the AI assistant is available."""
+    """
+    GET /api/chat/config/ → {enabled, mode}. The chat always answers: mode "ai" (Claude,
+    ANTHROPIC_API_KEY set) or "basic" (built-in auto-reply bot).
+    """
 
     permission_classes = [AllowAny]
 
     def get(self, request):
-        return Response({"enabled": assistant_enabled()})
+        return Response({"enabled": True, "mode": assistant_mode()})
 
 
 class ChatView(APIView):
     """
-    POST /api/chat/ {messages: [{role, content}, ...]} → {reply, cart_updated}
+    POST /api/chat/ {messages: [{role, content}, ...]} → {reply, cart_updated, handoff, mode}
     Open to guests (product questions); order and cart tools work only for the
     logged-in customer's own data. Rate-limited per user / IP (scope "chat").
     """

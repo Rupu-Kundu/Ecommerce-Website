@@ -9,6 +9,8 @@ same ones the regular API enforces.
 
 import json
 
+from django.conf import settings
+
 from anthropic import beta_tool
 from django.db import transaction
 from django.db.models import Q
@@ -21,6 +23,12 @@ from payments.gateway import payment_methods_payload
 from products.models import Category, Product
 
 MAX_RESULTS = 8
+STORE_LOCATION = {
+    "name": "Haatbox Experience Centre",
+    "address": "House 12, Road 5, Dhanmondi, Dhaka 1205",
+    "hours": "Sat–Thu 9 AM–9 PM",
+    "map_link": "/help#visit",
+}
 MAX_QUANTITY = 99
 
 
@@ -31,6 +39,7 @@ def _product_summary(p):
         "price_bdt": f"{p.price:.0f}",
         "category": p.category.name,
         "in_stock": p.stock_quantity > 0 and p.is_available,
+        "brand": p.brand,
         "stock_quantity": p.stock_quantity,
         "link": f"/products/{p.id}",
     }
@@ -41,8 +50,11 @@ def _as_json(data):
 
 
 def build_tools(user):
-    """Return (tools, state). `state["cart_updated"]` becomes True if the cart changed."""
-    state = {"cart_updated": False}
+    """
+    Return (tools, state). `state["cart_updated"]` becomes True if the cart changed;
+    `state["handoff"]` becomes True when the customer should be offered a person (live chat).
+    """
+    state = {"cart_updated": False, "handoff": False}
     logged_in = bool(user and user.is_authenticated)
 
     @beta_tool
@@ -84,11 +96,17 @@ def build_tools(user):
         p = Product.objects.select_related("category").filter(pk=product_id, is_available=True).first()
         if p is None:
             return _as_json({"error": "Product not found or not for sale."})
-        return _as_json({**_product_summary(p), "description": p.description})
+        from django.db.models import Avg, Count
+        stats = p.reviews.aggregate(avg=Avg("rating"), n=Count("id"))
+        return _as_json({
+            **_product_summary(p), "description": p.description, "details": p.specifications,
+            "rating": round(stats["avg"], 1) if stats["avg"] else None, "rating_count": stats["n"],
+            "photos": 1 + p.images.count() if p.image else p.images.count(),
+        })
 
     @beta_tool
     def get_store_info() -> str:
-        """Store policies: shipping methods and costs, payment methods (Card, bKash, Nagad), returns, currency."""
+        """Store policies: shipping methods and costs, payment methods (Card, bKash, Nagad, Cash on delivery), returns, currency."""
         return _as_json({
             "currency": "BDT (৳)",
             "shipping": shipping_methods_payload(),
@@ -96,10 +114,12 @@ def build_tools(user):
                 {"method": m["label"], "available": m["available"], "test_mode": m["demo"]}
                 for m in payment_methods_payload()
             ],
+            "cash_on_delivery": f"Choose COD at checkout and pay the rider in cash (orders up to ৳{settings.COD_MAX_AMOUNT:,.0f}).",
             "returns": "Unused items in original packaging can be returned within 7 days of delivery via support.",
             "delivery_area": "All of Bangladesh",
             "buy_now": "Every product has a 'Buy now' button that checks out just that item.",
-            "support": "support@haatbox.com.bd, Sat–Thu 9 AM–9 PM",
+            "support": "Live chat with the Haatbox team (Sat–Thu 9 AM–9 PM) or support@haatbox.com.bd",
+            "store_location": STORE_LOCATION,
         })
 
     @beta_tool
@@ -113,7 +133,7 @@ def build_tools(user):
             return _as_json({"error": "The customer is not logged in. Ask them to log in to see their orders."})
         limit = max(1, min(int(limit or 5), 10))
         orders = Order.objects.filter(
-            user=user, payment_status__in=[Order.PaymentStatus.PAID, Order.PaymentStatus.REFUNDED]
+            user=user, payment_status__in=Order.PLACED_PAYMENT_STATUSES
         ).prefetch_related("items")[:limit]
         return _as_json([
             {
@@ -163,5 +183,24 @@ def build_tools(user):
         total = sum(i.quantity for i in cart.items.all())
         return _as_json({"added": f"{quantity} × {product.name}", "items_in_cart": total, "cart_link": "/cart"})
 
-    tools = [search_products, list_categories, get_product, get_store_info, get_my_orders, add_to_cart]
+    @beta_tool
+    def request_human_agent(reason: str = "") -> str:
+        """Offer the customer a live chat with a person on the Haatbox team.
+
+        Call this when the customer asks for a human/agent/representative, has a complaint,
+        or has a problem you cannot solve (a wrong or damaged item, a refund, a payment that
+        went through but no order, changing an order or address).
+
+        Args:
+            reason: A few words on what the customer needs help with.
+        """
+        state["handoff"] = True
+        return _as_json({
+            "ok": True,
+            "note": "A 'Chat with our team' button is now shown under your reply. Tell the customer to tap it; "
+                    "this conversation will be shared with the team so they don't have to repeat themselves. "
+                    "The team is online Sat–Thu 9 AM–9 PM and replies within a few minutes in those hours.",
+        })
+
+    tools = [search_products, list_categories, get_product, get_store_info, get_my_orders, add_to_cart, request_human_agent]
     return tools, state

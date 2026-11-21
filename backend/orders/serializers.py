@@ -17,9 +17,13 @@ class AddressSerializer(serializers.ModelSerializer):
         model = Address
         fields = (
             "id", "recipient_name", "phone", "street_address",
-            "city", "postal_code", "country",
+            "city", "postal_code", "country", "latitude", "longitude",
         )
         read_only_fields = ("id",)
+        extra_kwargs = {
+            "latitude": {"min_value": -90, "max_value": 90},
+            "longitude": {"min_value": -180, "max_value": 180},
+        }
 
     # Note: DRF CharFields already trim whitespace and reject blank values.
 
@@ -38,6 +42,21 @@ class AddressSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Enter a valid postal code.")
         return value
 
+    def to_internal_value(self, data):
+        # Browsers send many decimals; keep 6 (≈10 cm), which is what the database stores.
+        if isinstance(data, dict):
+            data = dict(data)
+            for key in ("latitude", "longitude"):
+                if isinstance(data.get(key), (int, float)) and not isinstance(data.get(key), bool):
+                    data[key] = round(data[key], 6)
+        return super().to_internal_value(data)
+
+    def validate(self, attrs):
+        # A map pin needs both coordinates (or neither).
+        if (attrs.get("latitude") is None) != (attrs.get("longitude") is None):
+            raise serializers.ValidationError({"latitude": "Send both latitude and longitude, or neither."})
+        return attrs
+
 
 class BuyNowItemSerializer(serializers.Serializer):
     product_id = serializers.IntegerField()
@@ -53,7 +72,7 @@ class CheckoutSerializer(serializers.Serializer):
     address_id = serializers.IntegerField(required=False)
     address = AddressSerializer(required=False)
     shipping_method = serializers.ChoiceField(choices=list(SHIPPING_METHODS.keys()))
-    payment_method = serializers.ChoiceField(choices=["card", "bkash", "nagad"], default="card")
+    payment_method = serializers.ChoiceField(choices=["card", "bkash", "nagad", "cod"], default="card")
     items = BuyNowItemSerializer(many=True, required=False, allow_empty=False, max_length=1)
 
     def validate(self, attrs):
@@ -148,7 +167,12 @@ class OrderStatusUpdateSerializer(serializers.Serializer):
         order = self.context["order"]
         if value == Order.Status.PENDING:
             raise serializers.ValidationError("An order cannot be moved back to pending.")
-        if value in REQUIRES_PAYMENT and order.payment_status != Order.PaymentStatus.PAID:
+        cod = order.payment_status == Order.PaymentStatus.DUE
+        if cod and order.status == Order.Status.CANCELLED and value != Order.Status.CANCELLED:
+            raise serializers.ValidationError(
+                f"Cash-on-delivery order #{order.pk} was cancelled and its stock returned; it cannot be reopened."
+            )
+        if value in REQUIRES_PAYMENT and order.payment_status != Order.PaymentStatus.PAID and not cod:
             raise serializers.ValidationError(
                 f"Order #{order.pk} is not paid; it cannot be marked {value}."
             )

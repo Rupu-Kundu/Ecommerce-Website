@@ -1,15 +1,8 @@
 import { Link } from 'react-router-dom'
+import { CONTACT } from '../utils/store'
 import Logo from './Logo'
 
 const YEAR = new Date().getFullYear()
-
-// Demo contact details — replace with the real business details before launch.
-const CONTACT = {
-  address: 'House 12, Road 5, Dhanmondi, Dhaka 1205',
-  phone: '+880 1700-000000',
-  email: 'support@haatbox.com.bd',
-  hours: 'Sat–Thu, 9 AM – 9 PM',
-}
 
 const QUICK_LINKS = [
   { to: '/', label: 'Home' },
@@ -24,6 +17,7 @@ const SUPPORT_LINKS = [
   { to: '/help#returns', label: 'Returns & refunds' },
   { to: '/help#payment', label: 'Payment methods' },
   { to: '/help#faq', label: 'FAQ' },
+  { to: '/help#visit', label: 'Find our store' },
 ]
 
 const SOCIAL = [

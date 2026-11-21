@@ -10,6 +10,10 @@ Card / bKash / Nagad pages, no real money) — but only while PAYMENTS_ALLOW_DEM
 is on (development / tests). In production it is off, so the method is simply
 unavailable until it is configured.
 
+Cash on delivery needs no provider: the order is confirmed straight away and the
+customer pays the rider (see services.place_cod_order). It is on by default
+(PAYMENTS_ALLOW_COD) for orders up to COD_MAX_AMOUNT.
+
 Card numbers, wallet PINs and OTPs never touch this server: customers enter them on
 Stripe / bKash / Nagad pages; the demo pages never send them anywhere.
 """
@@ -23,7 +27,8 @@ from . import bkash, nagad
 from .errors import PaymentError
 from .models import Payment
 
-METHOD_LABELS = {"card": "Card", "bkash": "bKash", "nagad": "Nagad"}
+METHOD_LABELS = {"card": "Card", "bkash": "bKash", "nagad": "Nagad", "cod": "Cash on delivery"}
+ONLINE_METHODS = ("card", "bkash", "nagad")
 
 
 def stripe_enabled():
@@ -46,8 +51,14 @@ def real_provider_for(method):
     return None
 
 
+def cod_enabled():
+    return settings.PAYMENTS_ALLOW_COD
+
+
 def provider_for(method):
     """The provider that will handle `method`, or None if the method is unavailable."""
+    if method == "cod":
+        return Payment.Provider.COD if cod_enabled() else None
     return real_provider_for(method) or (Payment.Provider.DEMO if demo_allowed() else None)
 
 
@@ -61,6 +72,7 @@ def payment_methods_payload():
             "provider": provider,
             "available": provider is not None,
             "demo": provider == Payment.Provider.DEMO,
+            **({"max_amount": f"{settings.COD_MAX_AMOUNT:.2f}"} if code == "cod" else {}),
         })
     return methods
 
@@ -90,6 +102,8 @@ def create_session(order, user, client_ip=None):
     """Start a payment for `order`. Returns (provider, session_id, checkout_url)."""
     frontend = settings.FRONTEND_URL
     provider = provider_for(order.payment_method)
+    if provider == Payment.Provider.COD:
+        raise PaymentError("Cash-on-delivery orders don't need an online payment.")
     if provider is None:
         raise PaymentError(f"{METHOD_LABELS.get(order.payment_method, 'This')} payments are not available right now.")
 

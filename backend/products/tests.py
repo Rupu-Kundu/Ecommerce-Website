@@ -300,10 +300,32 @@ class SeedImagesTests(APITestCase):
             "products.management.commands.seed_products.download_image", return_value=buf.getvalue()
         ) as download:
             call_command("seed_products", "--with-images", verbosity=0)
-            self.assertEqual(download.call_count, Product.objects.count())  # 30 photos
+            n = Product.objects.count()
+            self.assertEqual(download.call_count, 2 * n)  # main photo + second gallery photo each
             call_command("seed_products", "--with-images", verbosity=0)
-            self.assertEqual(download.call_count, Product.objects.count())  # nothing re-downloaded
+            self.assertEqual(download.call_count, 2 * n)  # nothing re-downloaded
         self.assertFalse(Product.objects.filter(image="").exists())
+        # every product has at least 2 photos
+        self.assertFalse(Product.objects.filter(images__isnull=True).exists())
+
+    def test_new_categories_moves_and_details(self):
+        cat = Category.objects.create(name="Electronics", slug="electronics", description="x")
+        Product.objects.create(name="Wireless Earbuds", category=cat, price=Decimal("5999"), stock_quantity=4)
+        call_command("seed_products", verbosity=0)
+        slugs = set(Category.objects.values_list("slug", flat=True))
+        for slug in ("shoes", "watches", "earbuds-audio", "perfumes", "cat-supplies", "medical-health", "baby-products", "home-decor"):
+            self.assertIn(slug, slugs)
+        earbuds = Product.objects.get(name="Wireless Earbuds")
+        self.assertEqual(earbuds.category.slug, "earbuds-audio")  # moved
+        self.assertEqual(earbuds.stock_quantity, 4)               # existing data kept
+        self.assertTrue(earbuds.brand)
+        self.assertTrue(all({"label", "value"} <= set(r) for r in earbuds.specifications))
+        self.assertGreaterEqual(Product.objects.filter(category__slug="clothing").count(), 9)
+        # admin edits are not overwritten on the next run
+        earbuds.brand = "Custom"
+        earbuds.save()
+        call_command("seed_products", verbosity=0)
+        self.assertEqual(Product.objects.get(name="Wireless Earbuds").brand, "Custom")
 
 
 class DemoUsersCommandTests(APITestCase):

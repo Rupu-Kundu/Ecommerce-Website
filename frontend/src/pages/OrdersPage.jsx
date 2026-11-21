@@ -71,6 +71,7 @@ export default function OrdersPage() {
                       <span className="font-semibold text-slate-900">Order #{order.id}</span>
                       <OrderStatusBadge status={order.status} label={order.status_label} />
                       {order.payment_status === 'refunded' && <OrderStatusBadge status="refunded" label="Refunded" />}
+                      {order.payment_status === 'due' && order.status !== 'cancelled' && <OrderStatusBadge status="due" label="Pay on delivery" />}
                     </div>
                     <p className="mt-0.5 truncate text-sm text-slate-500">
                       {formatDate(order.created_at)} · {order.item_count} {order.item_count === 1 ? 'item' : 'items'} ·{' '}

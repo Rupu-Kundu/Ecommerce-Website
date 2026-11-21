@@ -60,7 +60,9 @@ class PaymentMethodTests(PaymentTestBase):
     @override_settings(PAYMENTS_ALLOW_DEMO=False)
     def test_without_credentials_and_demo_off_methods_are_unavailable(self):
         methods = self.client.get("/api/payments/config/").data["methods"]
-        self.assertTrue(all(not m["available"] for m in methods))
+        online = [m for m in methods if m["code"] != "cod"]
+        self.assertTrue(all(not m["available"] for m in online))
+        self.assertTrue([m for m in methods if m["code"] == "cod"][0]["available"])  # cash needs no gateway
         res = self.client.post("/api/orders/", order_payload(payment_method="bkash"), format="json")
         self.assertEqual(res.status_code, 400)
         self.assertIn("not available", str(res.data["payment_method"]))

@@ -19,7 +19,7 @@ from .serializers import (
     OrderSerializer,
     OrderStatusUpdateSerializer,
 )
-from .services import CheckoutProblem, create_order, prepare_buy_now, prepare_checkout
+from .services import change_order_status, CheckoutProblem, create_order, prepare_buy_now, prepare_checkout
 from .shipping import SHIPPING_METHODS, shipping_methods_payload
 
 # ---------------- Checkout (Day 2 · Step 2) ----------------
@@ -104,9 +104,7 @@ class OrderListCreateView(APIView):
     """
 
     def get(self, request):
-        queryset = orders_for(request.user).filter(
-            payment_status__in=[Order.PaymentStatus.PAID, Order.PaymentStatus.REFUNDED]
-        )
+        queryset = orders_for(request.user).filter(payment_status__in=Order.PLACED_PAYMENT_STATUSES)
         # ?status=shipped — filter by order status (used by the admin dashboard)
         status_filter = request.query_params.get("status")
         if status_filter in Order.Status.values:
@@ -149,8 +147,7 @@ class OrderStatusUpdateView(APIView):
         order = get_object_or_404(Order, pk=pk)
         serializer = OrderStatusUpdateSerializer(data=request.data, context={"order": order})
         serializer.is_valid(raise_exception=True)
-        order.status = serializer.validated_data["status"]
-        order.save(update_fields=["status", "updated_at"])
+        change_order_status(order, serializer.validated_data["status"])
         order = orders_for(request.user).get(pk=order.pk)
         return Response(OrderSerializer(order, context={"request": request}).data)
 
@@ -165,7 +162,7 @@ class AdminStatsView(APIView):
 
     def get(self, request):
         placed = Order.objects.filter(
-            payment_status__in=[Order.PaymentStatus.PAID, Order.PaymentStatus.REFUNDED]
+            payment_status__in=Order.PLACED_PAYMENT_STATUSES
         )
         paid = Order.objects.filter(payment_status=Order.PaymentStatus.PAID)
         by_status = dict(placed.values_list("status").annotate(n=Count("id")).values_list("status", "n"))

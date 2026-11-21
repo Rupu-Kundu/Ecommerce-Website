@@ -5,6 +5,7 @@ import AdminLayout from '../pages/admin/AdminLayout'
 import AdminOrdersPage from '../pages/admin/AdminOrdersPage'
 import AdminOverviewPage from '../pages/admin/AdminOverviewPage'
 import AdminProductsPage from '../pages/admin/AdminProductsPage'
+import AdminSupportPage from '../pages/admin/AdminSupportPage'
 import CartPage from '../pages/CartPage'
 import CheckoutPage from '../pages/CheckoutPage'
 import HelpPage from '../pages/HelpPage'
@@ -58,6 +59,7 @@ export default function AppRouter() {
             <Route path="products" element={<AdminProductsPage />} />
             <Route path="categories" element={<AdminCategoriesPage />} />
             <Route path="orders" element={<AdminOrdersPage />} />
+            <Route path="chat" element={<AdminSupportPage />} />
           </Route>
         </Route>
 

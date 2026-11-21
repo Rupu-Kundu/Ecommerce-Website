@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import ErrorMessage from '../components/ErrorMessage'
 import Loader from '../components/Loader'
 import OrderStatusBadge from '../components/OrderStatusBadge'
@@ -8,11 +8,14 @@ import { getErrorMessage } from '../services/api'
 import { getOrder } from '../services/orderService'
 import { formatDate, formatPrice } from '../utils/format'
 import NotFoundPage from './NotFoundPage'
+import { LazyLocationMap } from '../components/map/LazyMaps'
 
 const STEPS = ['paid', 'processing', 'shipped', 'delivered']
 
 export default function OrderDetailPage() {
   const { id } = useParams()
+  const [params] = useSearchParams()
+  const justPlacedCod = params.get('placed') === 'cod'
   const [order, setOrder] = useState(null)
   const [error, setError] = useState('')
   const [notFound, setNotFound] = useState(false)
@@ -37,6 +40,7 @@ export default function OrderDetailPage() {
 
   const stepIndex = STEPS.indexOf(order.status)
   const address = order.address
+  const cod = order.payment_method === 'cod'
 
   return (
     <div>
@@ -46,10 +50,19 @@ export default function OrderDetailPage() {
         <span>Order #{order.id}</span>
       </nav>
 
+      {justPlacedCod && (
+        <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900" role="status" data-testid="cod-placed">
+          <p className="font-bold">🎉 Order placed! Thank you.</p>
+          <p className="mt-1 text-sm">
+            Please keep <strong>{formatPrice(order.total_amount)}</strong> ready and pay the rider in cash when your order arrives.
+          </p>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-bold text-slate-900">Order #{order.id}</h1>
         <OrderStatusBadge status={order.status} label={order.status_label} />
         {order.payment_status === 'refunded' && <OrderStatusBadge status="refunded" label="Refunded" />}
+        {order.payment_status === 'due' && order.status !== 'cancelled' && <OrderStatusBadge status="due" label="Pay on delivery" />}
       </div>
       <p className="mt-1 text-sm text-slate-500">
         Placed {formatDate(order.created_at)} · Payment:{' '}
@@ -62,7 +75,7 @@ export default function OrderDetailPage() {
           {STEPS.map((step, i) => (
             <li key={step} className="text-center">
               <div className={`h-1.5 rounded-full ${i <= stepIndex ? 'bg-brand-600' : 'bg-slate-200'}`} />
-              <span className={`mt-2 block text-xs font-medium capitalize ${i <= stepIndex ? 'text-brand-800' : 'text-slate-400'}`}>{step}</span>
+              <span className={`mt-2 block text-xs font-medium capitalize ${i <= stepIndex ? 'text-brand-800' : 'text-slate-400'}`}>{step === 'paid' && cod ? 'confirmed' : step}</span>
             </li>
           ))}
         </ol>
@@ -110,6 +123,11 @@ export default function OrderDetailPage() {
               <p className="font-semibold text-slate-900">{address.recipient_name}</p>
               <p className="text-slate-600">{address.phone}</p>
               <p className="mt-1 text-slate-600">{address.street_address}, {address.city} {address.postal_code}, {address.country}</p>
+              {address.latitude != null && address.longitude != null && (
+                <div className="mt-3">
+                  <LazyLocationMap lat={address.latitude} lng={address.longitude} label="Delivery pin" className="h-48" />
+                </div>
+              )}
             </section>
           )}
         </div>

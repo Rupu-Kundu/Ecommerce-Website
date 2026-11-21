@@ -24,6 +24,12 @@ export async function confirmPayment(sessionId, providerStatus) {
   return data
 }
 
+/** Cash on delivery: confirm the order without paying online → {order_id, status, payment_status, amount_due} */
+export async function placeCodOrder(orderId) {
+  const { data } = await api.post('/payments/cod/', { order_id: orderId })
+  return data
+}
+
 export async function cancelPayment(orderId) {
   const { data } = await api.post('/payments/cancel/', { order_id: orderId })
   return data

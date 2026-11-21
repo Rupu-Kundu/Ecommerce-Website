@@ -16,6 +16,7 @@ urlpatterns = [
     path('api/orders/', include(order_urlpatterns)),
     path('api/payments/', include('payments.urls')),
     path('api/chat/', include('assistant.urls')),
+    path('api/support/', include('support.urls')),
     path('api/admin/stats/', AdminStatsView.as_view(), name='admin-stats'),
 ]
 

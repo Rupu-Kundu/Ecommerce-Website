@@ -1,5 +1,7 @@
 import { useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { LazyLocationMap } from '../components/map/LazyMaps'
+import { CONTACT, STORE_LOCATION } from '../utils/store'
 
 const SECTIONS = [
   {
@@ -23,8 +25,9 @@ const SECTIONS = [
     id: 'payment',
     title: 'Payment methods',
     body: [
-      'Secure online card payment is being added. All prices are shown in Bangladeshi Taka (৳).',
-      'We never store your card details.',
+      'Pay by Card (Visa, Mastercard — via Stripe), bKash or Nagad. All prices are in Bangladeshi Taka (৳).',
+      'Cash on delivery (COD): choose "COD" at checkout and pay the rider in cash when your order arrives (orders up to ৳50,000).',
+      'You pay on the secure Stripe, bKash or Nagad page. We never see or store your card number, PIN or OTP.',
     ],
   },
   {
@@ -33,7 +36,8 @@ const SECTIONS = [
     body: [
       'Do I need an account to shop? You can browse without one; an account is needed to use the cart and check out.',
       'Is my cart saved? Yes — your cart is stored with your account, so it is still there after you log out and back in.',
-      'Can I change my delivery address? Yes, choose a saved address or add a new one at checkout.',
+      'Can I change my delivery address? Yes, choose a saved address or add a new one at checkout. You can also drop a pin on the map so the rider finds your door.',
+      'Can I talk to a person? Yes — open the chat (bottom right) and tap "Chat with our team". The AI assistant can also hand you over.',
     ],
   },
 ]
@@ -61,6 +65,24 @@ export default function HelpPage() {
             </ul>
           </section>
         ))}
+
+        <section id="visit" className="scroll-mt-24 rounded-2xl border border-slate-200 bg-white p-6">
+          <h2 className="text-lg font-bold text-slate-900">Visit our store</h2>
+          <div className="mt-3 grid gap-5 sm:grid-cols-5">
+            <div className="space-y-1.5 text-sm text-slate-600 sm:col-span-2">
+              <p className="font-semibold text-slate-900">{STORE_LOCATION.name}</p>
+              <p>{CONTACT.address}</p>
+              <p>{CONTACT.hours}</p>
+              <p>
+                <a href={`tel:${CONTACT.phone.replace(/[\s-]/g, '')}`} className="font-semibold text-brand-700 hover:underline">{CONTACT.phone}</a>
+              </p>
+              <p className="pt-1 text-xs text-slate-500">See products in person and pick up online orders.</p>
+            </div>
+            <div className="sm:col-span-3">
+              <LazyLocationMap lat={STORE_LOCATION.lat} lng={STORE_LOCATION.lng} label="Haatbox" zoom={15} className="h-64" />
+            </div>
+          </div>
+        </section>
       </div>
 
       <p className="mt-8 text-sm text-slate-600">

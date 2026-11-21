@@ -23,3 +23,19 @@ export async function getCategories() {
   const { data } = await api.get('/categories/')
   return data
 }
+
+/** Ratings & reviews → {summary: {average, count, distribution}, my_review, results} */
+export async function getReviews(productId) {
+  const { data } = await api.get(`/products/${productId}/reviews/`)
+  return data
+}
+
+/** Add or update your review: {rating 1-5, comment} */
+export async function saveReview(productId, review) {
+  const { data } = await api.post(`/products/${productId}/reviews/`, review)
+  return data
+}
+
+export async function deleteReview(productId, reviewId) {
+  await api.delete(`/products/${productId}/reviews/${reviewId}/`)
+}

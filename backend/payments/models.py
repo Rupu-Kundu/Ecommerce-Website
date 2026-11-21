@@ -13,6 +13,7 @@ class Payment(models.Model):
         BKASH = "bkash", "bKash"
         NAGAD = "nagad", "Nagad"
         DEMO = "demo", "Demo test gateway"
+        COD = "cod", "Cash on delivery"
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"

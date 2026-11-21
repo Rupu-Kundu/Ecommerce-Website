@@ -1,10 +1,15 @@
-"""Runs one chat turn with Claude (Messages API tool runner, hosted in Django)."""
+"""
+Runs one chat turn: with Claude (Messages API tool runner, hosted in Django) when an
+API key is set, otherwise with the built-in auto-reply bot (assistant/basic.py).
+If the Claude API fails, the built-in bot answers instead, so the chat always replies.
+"""
 
 import logging
 
 import anthropic
 from django.conf import settings
 
+from .basic import basic_reply
 from .prompts import SYSTEM_PROMPT
 from .tools import build_tools
 
@@ -28,23 +33,47 @@ def _client():
     return anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY, timeout=60.0, max_retries=2)
 
 
-def run_chat(history, user):
+LIVE_CHAT_CONTEXT = (
+    "This is the Haatbox live chat with the human team. The team is away right now, so you are "
+    "replying automatically. Help as much as you can; for anything you can't do, say a person from "
+    "the team will follow up here. Do not call request_human_agent."
+)
+
+
+def assistant_mode():
+    """'ai' = Claude, 'basic' = built-in auto-reply bot."""
+    return "ai" if assistant_enabled() else "basic"
+
+
+def run_chat(history, user, live_chat=False):
+    """
+    Answer the conversation. live_chat=True: auto-reply inside a live chat while the team is away.
+    Returns {"reply", "cart_updated", "handoff", "mode"}.
+    """
+    if not assistant_enabled():
+        return {**basic_reply(history, user, live_chat=live_chat), "mode": "basic"}
+    try:
+        return {**_run_claude(history, user, live_chat), "mode": "ai"}
+    except AssistantUnavailable as exc:
+        logger.warning("Claude unavailable (%s); answered with the built-in bot.", exc)
+        return {**basic_reply(history, user, live_chat=live_chat), "mode": "basic"}
+
+
+def _run_claude(history, user, live_chat=False):
     """
     history: [{"role": "user"|"assistant", "content": str}, ...] ending with a user message.
     Only plain text is replayed between turns (no thinking blocks), so the history stays
     valid for preserved thinking; inside one turn the tool runner replays everything verbatim.
-    Returns {"reply": str, "cart_updated": bool}.
+    Returns {"reply": str, "cart_updated": bool, "handoff": bool}.
     """
-    if not assistant_enabled():
-        raise AssistantUnavailable("The AI assistant is not set up yet.")
-
     tools, state = build_tools(user)
     who = (
         f"The customer is logged in as {user.username}."
         if user and user.is_authenticated
         else "The customer is not logged in (a guest)."
     )
-    messages = [*history, {"role": "system", "content": who}]
+    context = f"{who} {LIVE_CHAT_CONTEXT}" if live_chat else who
+    messages = [*history, {"role": "system", "content": context}]
 
     try:
         runner = _client().beta.messages.tool_runner(
@@ -75,4 +104,4 @@ def run_chat(history, user):
         reply = "\n\n".join(b.text for b in final.content if b.type == "text").strip()
         if not reply:
             reply = "Sorry, I couldn't come up with an answer. Could you rephrase?"
-    return {"reply": reply, "cart_updated": state["cart_updated"]}
+    return {"reply": reply, "cart_updated": state["cart_updated"], "handoff": state["handoff"] and not live_chat}

@@ -7,6 +7,7 @@ const STYLES = {
   cancelled: 'bg-red-50 text-red-700 ring-red-200',
   failed: 'bg-red-50 text-red-700 ring-red-200',
   refunded: 'bg-amber-50 text-amber-800 ring-amber-200',
+  due: 'bg-orange-50 text-orange-800 ring-orange-200', // cash on delivery, not collected yet
 }
 
 /** Coloured pill for an order status or payment status. */
