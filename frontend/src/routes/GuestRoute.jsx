@@ -12,7 +12,8 @@ export default function GuestRoute() {
 
   if (initializing) return <Loader label="Checking your session..." />
   if (isAuthenticated) {
-    const from = location.state?.from?.pathname || '/'
+    const fromLocation = location.state?.from
+    const from = fromLocation ? `${fromLocation.pathname}${fromLocation.search || ''}` : '/'
     return <Navigate to={from} replace />
   }
   return <Outlet />

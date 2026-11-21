@@ -15,6 +15,11 @@ class Order(models.Model):
         DELIVERED = "delivered", "Delivered"
         CANCELLED = "cancelled", "Cancelled"
 
+    class PaymentMethod(models.TextChoices):
+        CARD = "card", "Card"
+        BKASH = "bkash", "bKash"
+        NAGAD = "nagad", "Nagad"
+
     class PaymentStatus(models.TextChoices):
         PENDING = "pending", "Pending"
         PAID = "paid", "Paid"
@@ -39,6 +44,9 @@ class Order(models.Model):
         max_digits=10, decimal_places=2, validators=[MinValueValidator(0)]
     )
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    payment_method = models.CharField(max_length=20, choices=PaymentMethod.choices, default=PaymentMethod.CARD)
+    # False for "Buy now" orders: those must not empty the customer's cart after payment.
+    from_cart = models.BooleanField(default=True)
     payment_status = models.CharField(
         max_length=20, choices=PaymentStatus.choices, default=PaymentStatus.PENDING
     )

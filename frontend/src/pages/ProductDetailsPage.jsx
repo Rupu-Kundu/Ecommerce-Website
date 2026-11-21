@@ -134,6 +134,14 @@ export default function ProductDetailsPage() {
                   >
                     {adding ? 'Adding...' : 'Add to cart'}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/checkout?buy=${product.id}&qty=${quantity}`)}
+                    disabled={adding}
+                    className="rounded-md border-2 border-brand-700 px-6 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50 disabled:opacity-60"
+                  >
+                    Buy now
+                  </button>
                 </div>
               ) : (
                 <p className="text-sm text-amber-700">You already have all available stock in your cart.</p>

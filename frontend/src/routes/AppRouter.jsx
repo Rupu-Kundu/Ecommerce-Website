@@ -1,5 +1,10 @@
 import { Route, Routes } from 'react-router-dom'
 import Layout from '../components/Layout'
+import AdminCategoriesPage from '../pages/admin/AdminCategoriesPage'
+import AdminLayout from '../pages/admin/AdminLayout'
+import AdminOrdersPage from '../pages/admin/AdminOrdersPage'
+import AdminOverviewPage from '../pages/admin/AdminOverviewPage'
+import AdminProductsPage from '../pages/admin/AdminProductsPage'
 import CartPage from '../pages/CartPage'
 import CheckoutPage from '../pages/CheckoutPage'
 import HelpPage from '../pages/HelpPage'
@@ -39,9 +44,21 @@ export default function AppRouter() {
           <Route path="checkout" element={<CheckoutPage />} />
           <Route path="payment/demo" element={<PaymentDemoPage />} />
           <Route path="payment/success" element={<PaymentSuccessPage />} />
+          {/* bKash / Nagad send the customer back here */}
+          <Route path="payment/success/:method" element={<PaymentSuccessPage />} />
           <Route path="payment/cancel" element={<PaymentCancelPage />} />
           <Route path="orders" element={<OrdersPage />} />
           <Route path="orders/:id" element={<OrderDetailPage />} />
+        </Route>
+
+        {/* Admins only (customers are sent home, guests to /login) */}
+        <Route element={<ProtectedRoute adminOnly />}>
+          <Route path="admin-dashboard" element={<AdminLayout />}>
+            <Route index element={<AdminOverviewPage />} />
+            <Route path="products" element={<AdminProductsPage />} />
+            <Route path="categories" element={<AdminCategoriesPage />} />
+            <Route path="orders" element={<AdminOrdersPage />} />
+          </Route>
         </Route>
 
         <Route path="*" element={<NotFoundPage />} />

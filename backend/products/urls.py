@@ -1,12 +1,12 @@
 from django.urls import include, path
 from rest_framework.routers import SimpleRouter
 
-from .views import CategoryListView, ProductViewSet
+from .views import CategoryViewSet, ProductViewSet
 
 router = SimpleRouter()
 router.register("products", ProductViewSet, basename="product")
+router.register("categories", CategoryViewSet, basename="category")
 
 urlpatterns = [
-    path("categories/", CategoryListView.as_view(), name="category-list"),
     path("", include(router.urls)),
 ]

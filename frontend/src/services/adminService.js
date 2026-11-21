@@ -1,0 +1,68 @@
+import api from './api'
+
+// Admin-only calls. The backend checks the admin role on every request —
+// hiding the dashboard in the UI is a convenience, not the security boundary.
+
+export async function getAdminStats() {
+  const { data } = await api.get('/admin/stats/')
+  return data
+}
+
+// ---- Products ----
+export async function getAdminProducts(params = {}) {
+  const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== '' && v != null))
+  const { data } = await api.get('/products/', { params: clean })
+  return data
+}
+
+/** fields: {name, category, price, stock_quantity, description, is_available, image?: File} */
+function toFormData(fields) {
+  const form = new FormData()
+  Object.entries(fields).forEach(([key, value]) => {
+    if (value === undefined || value === null) return
+    if (key === 'image' && !(value instanceof File)) return
+    form.append(key, typeof value === 'boolean' ? String(value) : value)
+  })
+  return form
+}
+
+export async function createProduct(fields) {
+  const { data } = await api.post('/products/', toFormData(fields))
+  return data
+}
+
+export async function updateProduct(id, fields) {
+  const { data } = await api.patch(`/products/${id}/`, toFormData(fields))
+  return data
+}
+
+export async function deleteProduct(id) {
+  await api.delete(`/products/${id}/`)
+}
+
+// ---- Categories ----
+export async function createCategory(fields) {
+  const { data } = await api.post('/categories/', fields)
+  return data
+}
+
+export async function updateCategory(id, fields) {
+  const { data } = await api.patch(`/categories/${id}/`, fields)
+  return data
+}
+
+export async function deleteCategory(id) {
+  await api.delete(`/categories/${id}/`)
+}
+
+// ---- Orders ----
+export async function getAdminOrders(params = {}) {
+  const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== '' && v != null))
+  const { data } = await api.get('/orders/', { params: clean })
+  return data
+}
+
+export async function updateOrderStatus(id, status) {
+  const { data } = await api.patch(`/orders/${id}/status/`, { status })
+  return data
+}

@@ -16,7 +16,9 @@ const MAX_CHECKS = 6 // Stripe can take a few seconds to report the payment
  */
 export default function PaymentSuccessPage() {
   const [params] = useSearchParams()
-  const sessionId = params.get('session_id')
+  // Stripe/demo: ?session_id=…  ·  bKash: ?paymentID=…&status=…  ·  Nagad: ?payment_ref_id=…&status=…
+  const sessionId = params.get('session_id') || params.get('paymentID') || params.get('payment_ref_id')
+  const providerStatus = params.get('paymentID') ? params.get('status') : null
   const { refreshCart } = useCart()
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
@@ -28,7 +30,7 @@ export default function PaymentSuccessPage() {
 
     async function check(attempt) {
       try {
-        const data = await confirmPayment(sessionId)
+        const data = await confirmPayment(sessionId, providerStatus)
         if (cancelled) return
         if (data.payment.status === 'pending' && attempt < MAX_CHECKS) {
           timer = setTimeout(() => check(attempt + 1), 2000)
@@ -45,7 +47,7 @@ export default function PaymentSuccessPage() {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [sessionId, refreshCart])
+  }, [sessionId, providerStatus, refreshCart])
 
   if (!sessionId) return <ErrorMessage message="Missing payment reference." />
   if (error) return <ErrorMessage message={error} />
@@ -67,11 +69,17 @@ export default function PaymentSuccessPage() {
       <dl className="mx-auto mt-6 max-w-xs space-y-1.5 rounded-2xl bg-slate-50 p-4 text-left text-sm">
         <div className="flex justify-between"><dt className="text-slate-500">Order</dt><dd className="font-semibold">#{order.id}</dd></div>
         <div className="flex justify-between"><dt className="text-slate-500">Amount</dt><dd className="font-semibold">{formatPrice(order.total_amount)}</dd></div>
+        <div className="flex justify-between"><dt className="text-slate-500">Paid with</dt><dd className="font-semibold" data-testid="paid-with">{order.payment_method_label}</dd></div>
         <div className="flex justify-between"><dt className="text-slate-500">Status</dt><dd className="font-semibold">{order.status_label}</dd></div>
       </dl>
 
       <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
-        <Link to={`/orders/${order.id}`} className="rounded-full bg-brand-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-800">
+        {!succeeded && payment.status !== 'pending' && (
+          <Link to="/cart" className="rounded-full bg-brand-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-800">
+            Try again
+          </Link>
+        )}
+        <Link to={`/orders/${order.id}`} className={`rounded-full px-5 py-2.5 text-sm font-semibold ${succeeded ? 'bg-brand-700 text-white hover:bg-brand-800' : 'border border-slate-300 text-slate-700 hover:bg-slate-50'}`}>
           View order
         </Link>
         <Link to="/products" className="rounded-full border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">

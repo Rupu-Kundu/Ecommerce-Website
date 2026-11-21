@@ -248,3 +248,96 @@ class PriceCurrencyMigrationTests(APITestCase):
         migration.bdt_to_usd(apps, None)
         b.refresh_from_db()
         self.assertEqual(b.price, Decimal("899.00"))
+
+
+class CategoryManagementTests(ProductTestBase):
+    URL = "/api/categories/"
+
+    def test_guest_and_customer_cannot_write(self):
+        self.assertEqual(self.client.post(self.URL, {"name": "Toys"}).status_code, 401)
+        self.auth_as("cust")
+        self.assertEqual(self.client.post(self.URL, {"name": "Toys"}).status_code, 403)
+        self.assertEqual(self.client.delete(f"{self.URL}{self.books.pk}/").status_code, 403)
+
+    def test_admin_crud_with_auto_slug(self):
+        self.auth_as("boss")
+        res = self.client.post(self.URL, {"name": "Toys & Games", "description": "Fun"})
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data["slug"], "toys-games")
+        cid = res.data["id"]
+        res = self.client.put(f"{self.URL}{cid}/", {"name": "Toys", "slug": "toys"})
+        self.assertEqual((res.status_code, res.data["name"], res.data["slug"]), (200, "Toys", "toys"))
+        self.assertEqual(self.client.delete(f"{self.URL}{cid}/").status_code, 204)
+
+    def test_duplicate_name_or_slug_rejected(self):
+        self.auth_as("boss")
+        self.assertEqual(self.client.post(self.URL, {"name": "Books"}).status_code, 400)
+        self.assertEqual(self.client.post(self.URL, {"name": "Other", "slug": "books"}).status_code, 400)
+
+    def test_cannot_delete_category_with_products(self):
+        self.auth_as("boss")
+        res = self.client.delete(f"{self.URL}{self.books.pk}/")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("still has products", res.data["detail"])
+        self.assertTrue(Category.objects.filter(pk=self.books.pk).exists())
+
+    def test_product_count_and_low_stock_filter(self):
+        counts = {c["slug"]: c["product_count"] for c in self.client.get(self.URL).data}
+        self.assertEqual(counts, {"books": 2, "phones": 2})
+        self.auth_as("boss")
+        names = sorted(p["name"] for p in self.client.get(PRODUCTS_URL, {"low_stock": "true"}).data["results"])
+        self.assertEqual(names, ["Basic Phone", "Flagship Phone", "Hidden Item"])  # stock ≤ 5; book has 10
+
+
+class SeedImagesTests(APITestCase):
+    @override_settings(MEDIA_ROOT=TEMP_MEDIA)
+    def test_with_images_downloads_only_missing_images(self):
+        from unittest import mock
+
+        buf = io.BytesIO()
+        Image.new("RGB", (8, 8), "green").save(buf, format="JPEG")
+        with mock.patch(
+            "products.management.commands.seed_products.download_image", return_value=buf.getvalue()
+        ) as download:
+            call_command("seed_products", "--with-images", verbosity=0)
+            self.assertEqual(download.call_count, Product.objects.count())  # 30 photos
+            call_command("seed_products", "--with-images", verbosity=0)
+            self.assertEqual(download.call_count, Product.objects.count())  # nothing re-downloaded
+        self.assertFalse(Product.objects.filter(image="").exists())
+
+
+class DemoUsersCommandTests(APITestCase):
+    def test_demo_users_created_and_can_log_in(self):
+        from django.contrib.auth import get_user_model
+
+        with override_settings(DEBUG=True):
+            call_command("seed_demo_users", verbosity=0, stdout=io.StringIO())
+        User = get_user_model()
+        self.assertTrue(User.objects.get(username="demo_admin").is_staff)
+        self.assertFalse(User.objects.get(username="demo_customer").is_staff)
+        res = self.client.post("/api/auth/login/", {"username": "demo_customer", "password": "HaatboxShop#2026"})
+        self.assertEqual(res.status_code, 200)
+
+    def test_refuses_in_production(self):
+        from django.core.management.base import CommandError
+
+        with override_settings(DEBUG=False), self.assertRaises(CommandError):
+            call_command("seed_demo_users", stdout=io.StringIO())
+
+
+@override_settings(MEDIA_ROOT=TEMP_MEDIA)
+class ProductImageCleanupTests(ProductTestBase):
+    def test_files_removed_on_replace_and_delete(self):
+        import os
+
+        from django.conf import settings
+
+        self.auth_as("boss")
+        res = self.client.post(PRODUCTS_URL, {"name": "Pic", "category": self.phones.pk, "price": "10", "image": make_image("a.png")}, format="multipart")
+        first = Product.objects.get(pk=res.data["id"]).image.name
+        self.client.patch(detail_url(res.data["id"]), {"image": make_image("b.png")}, format="multipart")
+        second = Product.objects.get(pk=res.data["id"]).image.name
+        self.assertFalse(os.path.exists(os.path.join(settings.MEDIA_ROOT, first)))
+        self.assertTrue(os.path.exists(os.path.join(settings.MEDIA_ROOT, second)))
+        self.client.delete(detail_url(res.data["id"]))
+        self.assertFalse(os.path.exists(os.path.join(settings.MEDIA_ROOT, second)))

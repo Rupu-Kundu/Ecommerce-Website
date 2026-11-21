@@ -4,7 +4,8 @@ The demo product photos are from [Unsplash](https://unsplash.com/) and are used 
 [Unsplash License](https://unsplash.com/license) (free to use, no permission needed).
 They were downloaded through Unsplash's image CDN as 800×800 square crops; no other changes were made.
 
-Uploaded images live in `backend/media/products/`. That folder is git-ignored, so the images are not in the repository.
+Uploaded images live in `backend/media/products/` (git-ignored). On a new machine, download them with
+`python manage.py seed_products --with-images`.
 
 | Product | Photo | Photographer |
 |---|---|---|
@@ -19,7 +20,7 @@ Uploaded images live in `backend/media/products/`. That folder is git-ignored, s
 | Atomic Habits | [A book with a pair of glasses on top of it](https://unsplash.com/photos/a-book-with-a-pair-of-glasses-on-top-of-it-ztuO6azZfI0) | Ionela Mat |
 | Non-stick Frying Pan | [Black and orange frying pan](https://unsplash.com/photos/black-and-orange-frying-pan-zEgp30gYpKk) | Cooker King |
 | Ceramic Mug Set | [White ceramic mug lot on white surface](https://unsplash.com/photos/white-ceramic-mug-lot-on-white-surface-oHrC8V_XRU4) | Tom Crew |
-| Desk Lamp LED | [White table lamp on brown wooden table](https://unsplash.com/photos/white-table-lamp-on-brown-wooden-table-nPyUKODwjD8) | Ochir-Erdene Oyunmedeg |
+| Desk Lamp LED | [White table lamp](https://unsplash.com/photos/white-table-lamp-mNXTZu7AeGA) | Brina Blum |
 | Smart Watch Fit 2 | [Black smart watch with white background](https://unsplash.com/photos/black-smart-watch-with-white-background-O43D6CYzxqM) | Auguras Pipiras |
 | Portable Bluetooth Speaker | [Oval grey portable speaker on white surface](https://unsplash.com/photos/oval-grey-portable-speaker-on-white-surface--WB52caEpmI) | Lynda Sanchez |
 | Smart Home Speaker | [A white smart speaker on a white surface](https://unsplash.com/photos/a-white-smart-speaker-on-a-white-surface-kDCIBGqU0_0) | Howard Bouchevereau |

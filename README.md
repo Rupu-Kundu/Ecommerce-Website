@@ -13,6 +13,9 @@ Ecommerce-Website/
 
 ## Documentation
 
+- **[Demo guide](docs/DEMO_GUIDE.md)**: setup, demo accounts, test payments, 5-minute demo script
+- [Security & production checklist](docs/SECURITY_CHECKLIST.md)
+
 - [Project Plan](docs/PROJECT_PLAN.md): feature scope, page list, structure, and environment variable plan.
 
 ## Environment Variables
@@ -85,6 +88,7 @@ Product photos: free Unsplash images, credited in [docs/IMAGE_CREDITS.md](docs/I
 | `/help` | Help center (shipping, returns, payment, FAQ) | Public |
 | `/payment/demo` · `/payment/success` · `/payment/cancel` | Test payment pages | Logged-in users |
 | `/orders` · `/orders/:id` | Order history and order details | Logged-in users |
+| `/admin-dashboard` (+ `/products`, `/categories`, `/orders`) | Admin dashboard | Admins only |
 | `*` | 404 Not Found | Public |
 
 Auth: the access token is kept in memory, the refresh token in `localStorage`. The Axios client
@@ -151,7 +155,7 @@ Shipping: Standard ৳120 (free over ৳5,000), Express ৳300.
 
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
-| POST | `/api/orders/` | Customer | `{shipping_method, address \| address_id}`: create an order from the cart (awaits payment) |
+| POST | `/api/orders/` | Customer | `{shipping_method, payment_method, address \| address_id, items?}`: create an order from the cart, or **Buy now** with `items: [{product_id, quantity}]` (cart untouched) |
 | GET | `/api/orders/` | Customer / Admin | Order history: orders with payment received (paid or refunded). Admins see all |
 | GET | `/api/orders/<id>/` | Owner / Admin | One order (others get 404) |
 | PATCH | `/api/orders/<id>/status/` | Admin | `{status}`: processing / shipped / delivered / cancelled (paid orders only) |
@@ -162,9 +166,9 @@ Statuses: Pending → Paid → Processing → Shipped → Delivered (or Cancelle
 
 | Method | Endpoint | Description |
 |---|---|---|
-| GET | `/api/payments/config/` | Active provider (`stripe` or `demo`) |
+| GET | `/api/payments/config/` | Payment methods (`card`, `bkash`, `nagad`), each with its provider and whether it is a demo |
 | POST | `/api/payments/session/` | `{order_id}`: start payment → `checkout_url` |
-| POST | `/api/payments/confirm/` | `{session_id}`: server verifies the payment with the provider |
+| POST | `/api/payments/confirm/` | `{session_id, status?}`: server verifies the payment with Stripe / bKash / Nagad |
 | POST | `/api/payments/cancel/` | `{order_id}`: customer left the payment page |
 | POST | `/api/payments/demo/complete/` | Demo gateway only: `{session_id, outcome: success\|failure}` |
 | POST | `/api/payments/webhook/` | Stripe webhook (signature verified with `STRIPE_WEBHOOK_SECRET`) |
@@ -172,6 +176,17 @@ Statuses: Pending → Paid → Processing → Shipped → Delivered (or Cancelle
 After a successful payment the server re-checks stock, reduces it, marks the order **Paid** and
 clears the cart. This happens exactly once, even if confirmation arrives twice (redirect + webhook,
 or a page refresh). If stock ran out while paying, the payment is refunded and the order cancelled.
+
+**Payment methods**
+
+| Method | Real gateway (switched on by `.env`) | Without credentials (development) |
+|---|---|---|
+| Card | Stripe Checkout (`STRIPE_*`) | Demo card page |
+| bKash | bKash Tokenized Checkout (`BKASH_*`) | Demo bKash page (number → code `123456` → PIN) |
+| Nagad | Nagad Merchant API, RSA-encrypted (`NAGAD_*`) | Demo Nagad page |
+
+In production the demo pages are off (`PAYMENTS_ALLOW_DEMO`), so unconfigured methods are hidden.
+See [docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md) for setup and test credentials.
 
 **Test payments**
 
@@ -183,17 +198,40 @@ or a page refresh). If stock ran out while paying, the payment is refunded and t
   `stripe listen --forward-to localhost:8000/api/payments/webhook/` and copy the printed `whsec_...`
   into `STRIPE_WEBHOOK_SECRET`.
 
+### Admin (`/api/`): admin only
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/admin/stats/` | Total sales, current orders, low-stock count, recent orders |
+| POST / PATCH / DELETE | `/api/categories/` · `/api/categories/<id>/` | Manage categories (delete refused while products use it) |
+| GET | `/api/products/?low_stock=true` | Products with 5 or fewer in stock |
+| GET | `/api/orders/?status=shipped` | Filter orders by status |
+
+### AI shopping assistant (`/api/chat/`)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/chat/config/` | `{enabled}`: whether `ANTHROPIC_API_KEY` is set |
+| POST | `/api/chat/` | `{messages: [{role, content}]}` → `{reply, cart_updated}` (guests welcome; rate-limited, `THROTTLE_CHAT`) |
+
+A chat button on every page opens **Haatbox Assistant**, powered by Claude (`claude-opus-5-5`, Messages API with tools, run inside Django).
+It answers in English or Bangla and uses tools that read the real database: product search and details, categories,
+store info (shipping and payments), **the logged-in customer's own orders**, and **add to cart**.
+Set `ANTHROPIC_API_KEY` in `backend/.env` to switch it on. Without it, the widget shows "offline".
+
 ### Sample data
 
 ```bash
-python manage.py seed_products   # 6 categories, 30 products, prices in BDT (safe to run again)
+python manage.py seed_products --with-images   # 6 categories, 30 products (BDT) + photos (safe to run again)
+python manage.py seed_demo_users               # demo_admin / demo_customer (see docs/DEMO_GUIDE.md)
 ```
 
-### Run backend tests
+### Run tests
 
 ```bash
-cd backend && source venv/bin/activate
-python manage.py test
+cd backend && source venv/bin/activate && python manage.py test   # Django API tests
+cd frontend && npm test                                           # React unit tests (Vitest + Testing Library)
+cd frontend && npm run lint && npm run build                      # lint + production build
 ```
 
 ## Status
@@ -209,3 +247,7 @@ python manage.py test
 - [x] Improvements: BDT currency, 30-product catalogue, Haatbox brand, new navbar & footer
 - [x] Day 2 — Step 3: Payment Test Integration (Stripe test mode + demo gateway)
 - [x] Day 2 — Step 4: Order API and Order History
+- [x] Day 2 — Step 5: Basic Admin Dashboard
+- [x] Day 2 — Step 6: Integration and Responsive Testing
+- [x] Day 2 — Step 7: Security and Production Preparation
+- [x] Day 2 — Step 8: Demo Preparation (local demo)

@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import ErrorMessage from '../components/ErrorMessage'
 import FormField from '../components/FormField'
 import Loader from '../components/Loader'
 import Notices from '../components/Notices'
 import OrderSummary from '../components/OrderSummary'
+import PaymentMethodPicker from '../components/PaymentMethodPicker'
 import useCart from '../context/useCart'
 import { getErrorMessage } from '../services/api'
 import { createOrder } from '../services/orderService'
 import { createPaymentSession, getPaymentConfig } from '../services/paymentService'
 import { getSavedAddresses, getShippingMethods, previewShippingCost } from '../services/checkoutService'
+import { getProduct } from '../services/productService'
 import { formatPrice } from '../utils/format'
 
 const EMPTY_ADDRESS = {
@@ -42,6 +44,11 @@ function formatAddress(a) {
 
 export default function CheckoutPage() {
   const { cart, refreshCart, setCart, clearNotices } = useCart()
+  // "Buy now": /checkout?buy=<productId>&qty=<n> checks out just that product (cart untouched).
+  const [params] = useSearchParams()
+  const buyId = params.get('buy')
+  const buyQty = Math.max(1, Number(params.get('qty')) || 1)
+  const [buyProduct, setBuyProduct] = useState(null)
   useEffect(() => clearNotices, [clearNotices]) // clear stock notices when leaving the page
 
   const [methods, setMethods] = useState([])
@@ -56,7 +63,8 @@ export default function CheckoutPage() {
   const [shippingMethod, setShippingMethod] = useState('standard')
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
-  const [paymentProvider, setPaymentProvider] = useState(null) // 'stripe' | 'demo'
+  const [paymentMethods, setPaymentMethods] = useState([])
+  const [paymentMethod, setPaymentMethod] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -64,14 +72,17 @@ export default function CheckoutPage() {
       setLoading(true)
       setLoadError('')
       try {
-        const [methodList, addresses] = await Promise.all([
+        const [methodList, addresses, config, product] = await Promise.all([
           getShippingMethods(),
           getSavedAddresses(),
-          refreshCart(),
-          getPaymentConfig().then((c) => !cancelled && setPaymentProvider(c.provider)).catch(() => {}),
+          getPaymentConfig(),
+          buyId ? getProduct(buyId) : refreshCart().then(() => null),
         ])
         if (cancelled) return
         setMethods(methodList)
+        setBuyProduct(product)
+        setPaymentMethods(config.methods)
+        setPaymentMethod((current) => current || config.methods.find((m) => m.available)?.code || '')
         setSavedAddresses(addresses)
         setAddressChoice(addresses.length ? String(addresses[0].id) : NEW_ADDRESS)
       } catch (err) {
@@ -84,12 +95,20 @@ export default function CheckoutPage() {
     return () => {
       cancelled = true
     }
-  }, [refreshCart, reloadKey])
+  }, [refreshCart, reloadKey, buyId])
+
+  // What is being bought: the cart, or ("Buy now") a single product.
+  const lines = buyProduct
+    ? [{ key: buyProduct.id, name: buyProduct.name, quantity: buyQty, total: Number(buyProduct.price) * buyQty }]
+    : cart.items.map((i) => ({ key: i.id, name: i.product.name, quantity: i.quantity, total: Number(i.line_total) }))
+  const subtotal = buyProduct ? Number(buyProduct.price) * buyQty : Number(cart.subtotal)
+  const itemCount = buyProduct ? buyQty : cart.total_items
 
   // Preview only — the server recalculates everything on submit.
   const selectedMethod = methods.find((m) => m.code === shippingMethod)
-  const previewShipping = previewShippingCost(selectedMethod, cart.subtotal)
-  const previewTotal = Number(cart.subtotal) + previewShipping
+  const previewShipping = previewShippingCost(selectedMethod, subtotal)
+  const previewTotal = subtotal + previewShipping
+  const payment = paymentMethods.find((m) => m.code === paymentMethod)
 
   function handleAddressChange(event) {
     const { name, value } = event.target
@@ -112,7 +131,12 @@ export default function CheckoutPage() {
       }
     }
 
-    const payload = { shipping_method: shippingMethod }
+    if (!payment?.available) {
+      setSubmitError('Please choose a payment method.')
+      return
+    }
+    const payload = { shipping_method: shippingMethod, payment_method: paymentMethod }
+    if (buyProduct) payload.items = [{ product_id: buyProduct.id, quantity: buyQty }]
     if (usingNew) payload.address = address
     else payload.address_id = Number(addressChoice)
 
@@ -133,10 +157,12 @@ export default function CheckoutPage() {
       } else if (status === 400 && data?.address && typeof data.address === 'object') {
         setFieldErrors(data.address)
         setSubmitError('Please fix the highlighted fields.')
+      } else if (status === 400 && data?.payment_method) {
+        setSubmitError([].concat(data.payment_method).join(' '))
       } else {
         if (data?.cart) setCart(data.cart)
         setSubmitError(getErrorMessage(err, 'Checkout failed. Please try again.'))
-        if (status === 400) refreshCart().catch(() => {}) // e.g. stock changed when starting payment
+        if (status === 400 && !buyProduct) refreshCart().catch(() => {}) // e.g. stock changed when starting payment
       }
       setSubmitting(false)
     }
@@ -145,7 +171,7 @@ export default function CheckoutPage() {
   if (loading) return <Loader label="Loading checkout..." />
   if (loadError) return <ErrorMessage message={loadError} onRetry={() => setReloadKey((k) => k + 1)} />
 
-  if (cart.items.length === 0) {
+  if (!buyProduct && cart.items.length === 0) {
     return (
       <div className="rounded-xl border border-slate-200 bg-white py-16 text-center">
         <Notices notices={cart.notices} />
@@ -236,7 +262,7 @@ export default function CheckoutPage() {
             <fieldset className="space-y-2">
               <legend className="sr-only">Choose a shipping method</legend>
               {methods.map((m) => {
-                const cost = previewShippingCost(m, cart.subtotal)
+                const cost = previewShippingCost(m, subtotal)
                 return (
                   <label key={m.code} className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 has-checked:border-brand-500 has-checked:bg-brand-50">
                     <span className="flex items-center gap-3">
@@ -264,19 +290,34 @@ export default function CheckoutPage() {
             </fieldset>
           </section>
 
+          {/* Payment method */}
+          <section className={sectionClass} aria-labelledby="payment-heading">
+            <h2 id="payment-heading" className="mb-4 text-lg font-bold text-slate-900">
+              Payment method
+            </h2>
+            <PaymentMethodPicker methods={paymentMethods} value={paymentMethod} onChange={setPaymentMethod} />
+          </section>
+
           {/* Items being ordered */}
           <section className={sectionClass} aria-labelledby="items-heading">
             <div className="mb-3 flex items-center justify-between">
-              <h2 id="items-heading" className="text-lg font-bold text-slate-900">Items</h2>
-              <Link to="/cart" className="text-sm font-medium text-brand-700 hover:underline">Edit cart</Link>
+              <h2 id="items-heading" className="text-lg font-bold text-slate-900">
+                Items
+                {buyProduct && <span className="ml-2 rounded-full bg-accent-300/40 px-2 py-0.5 align-middle text-xs font-bold text-amber-900">Buy now</span>}
+              </h2>
+              {buyProduct ? (
+                <Link to={`/products/${buyProduct.id}`} className="text-sm font-medium text-brand-700 hover:underline">Change</Link>
+              ) : (
+                <Link to="/cart" className="text-sm font-medium text-brand-700 hover:underline">Edit cart</Link>
+              )}
             </div>
             <ul className="divide-y divide-slate-100 text-sm">
-              {cart.items.map((item) => (
-                <li key={item.id} className="flex justify-between py-2">
+              {lines.map((line) => (
+                <li key={line.key} className="flex justify-between py-2" data-testid="checkout-line">
                   <span className="text-slate-700">
-                    {item.product.name} <span className="text-slate-400">× {item.quantity}</span>
+                    {line.name} <span className="text-slate-400">× {line.quantity}</span>
                   </span>
-                  <span className="font-medium tabular-nums">{formatPrice(item.line_total)}</span>
+                  <span className="font-medium tabular-nums">{formatPrice(line.total)}</span>
                 </li>
               ))}
             </ul>
@@ -285,7 +326,7 @@ export default function CheckoutPage() {
 
         {/* Summary + submit */}
         <div className="lg:sticky lg:top-20 lg:self-start">
-          <OrderSummary itemCount={cart.total_items} subtotal={cart.subtotal} shipping={previewShipping}>
+          <OrderSummary itemCount={itemCount} subtotal={subtotal} shipping={previewShipping}>
             {submitError && (
               <div role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
                 {submitError}
@@ -297,15 +338,19 @@ export default function CheckoutPage() {
               disabled={submitting}
               className="w-full rounded-full bg-brand-700 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800 disabled:opacity-60"
             >
-              {submitting ? 'Redirecting to payment…' : `Pay ${formatPrice(previewTotal)}`}
+              {submitting
+                ? 'Redirecting to payment…'
+                : `Pay ${formatPrice(previewTotal)}${payment ? ` with ${payment.label}` : ''}`}
             </button>
             <p className="text-center text-xs text-slate-500" data-testid="payment-mode">
-              🔒 {paymentProvider === 'stripe'
-                ? 'Secure payment by Stripe (test mode). Your card details never touch our servers.'
-                : 'Test mode: demo payment gateway — no real money is charged.'}
+              🔒 {!payment
+                ? 'Choose how you want to pay.'
+                : payment.demo
+                  ? `Test mode: simulated ${payment.label} payment — no real money is charged.`
+                  : `You'll pay securely on the ${payment.label === 'Card' ? 'Stripe' : payment.label} page. We never see your card, PIN or OTP.`}
             </p>
-            <Link to="/cart" className="block text-center text-sm font-medium text-slate-600 hover:text-slate-900">
-              ← Back to cart
+            <Link to={buyProduct ? `/products/${buyProduct.id}` : '/cart'} className="block text-center text-sm font-medium text-slate-600 hover:text-slate-900">
+              {buyProduct ? '← Back to product' : '← Back to cart'}
             </Link>
           </OrderSummary>
         </div>

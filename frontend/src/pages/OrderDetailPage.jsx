@@ -54,6 +54,7 @@ export default function OrderDetailPage() {
       <p className="mt-1 text-sm text-slate-500">
         Placed {formatDate(order.created_at)} · Payment:{' '}
         <span className="font-medium text-slate-700" data-testid="payment-status">{order.payment_status_label}</span>
+        {' '}· <span className="font-medium text-slate-700" data-testid="payment-method">{order.payment_method_label}</span>
       </p>
 
       {stepIndex >= 0 && (

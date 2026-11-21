@@ -10,6 +10,8 @@ class Payment(models.Model):
     class Provider(models.TextChoices):
         STRIPE = "stripe", "Stripe"
         PAYPAL = "paypal", "PayPal"
+        BKASH = "bkash", "bKash"
+        NAGAD = "nagad", "Nagad"
         DEMO = "demo", "Demo test gateway"
 
     class Status(models.TextChoices):

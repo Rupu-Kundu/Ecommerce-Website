@@ -53,17 +53,24 @@ def payment_response(request, payment):
     })
 
 
+def client_ip(request):
+    return request.META.get("REMOTE_ADDR")
+
+
 def own_payment(request, session_id):
     return get_object_or_404(Payment, transaction_id=session_id, user=request.user)
 
 
 class PaymentConfigView(APIView):
-    """GET /api/payments/config/ — which test payment provider is active (no secrets)."""
+    """GET /api/payments/config/ — available payment methods and their mode (no secrets)."""
 
     permission_classes = [AllowAny]
 
     def get(self, request):
-        return Response({"provider": gateway.active_provider(), "currency": settings.PAYMENT_CURRENCY.upper(), "test_mode": True})
+        return Response({
+            "currency": settings.PAYMENT_CURRENCY.upper(),
+            "methods": gateway.payment_methods_payload(),
+        })
 
 
 class CreatePaymentSessionView(APIView):
@@ -74,7 +81,7 @@ class CreatePaymentSessionView(APIView):
         serializer.is_valid(raise_exception=True)
         order = get_object_or_404(Order, pk=serializer.validated_data["order_id"], user=request.user)
         try:
-            payment, url = start_payment(order, request.user)
+            payment, url = start_payment(order, request.user, client_ip(request))
         except PaymentError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception:
@@ -91,9 +98,11 @@ class CreatePaymentSessionView(APIView):
 
 class ConfirmPaymentView(APIView):
     """
-    POST /api/payments/confirm/ {session_id}
-    Called by the success page after Stripe redirects back. The server asks Stripe
-    for the real payment status — it never trusts the browser's word for it.
+    POST /api/payments/confirm/ {session_id, status?}
+    Called by the return page after Stripe / bKash / Nagad redirect the customer back.
+    The server asks the provider for the real payment status — it never trusts the
+    browser's word for it. (bKash's ?status= is only used to skip executing a
+    payment the customer cancelled.)
     """
 
     def post(self, request):
@@ -101,15 +110,20 @@ class ConfirmPaymentView(APIView):
         serializer.is_valid(raise_exception=True)
         payment = own_payment(request, serializer.validated_data["session_id"])
 
-        if payment.provider == Payment.Provider.STRIPE and payment.status == Payment.Status.PENDING:
+        if payment.provider != Payment.Provider.DEMO and payment.status == Payment.Status.PENDING:
             try:
-                is_paid, is_expired, amount, intent = gateway.retrieve_session(payment.transaction_id)
+                is_paid, is_failed, amount, reference = gateway.verify(
+                    payment, {"status": request.data.get("status")}, client_ip(request)
+                )
             except Exception:
-                logger.exception("Could not verify Stripe session %s", payment.transaction_id)
-                return Response({"detail": "Could not verify the payment. Please refresh in a moment."}, status=status.HTTP_502_BAD_GATEWAY)
+                logger.exception("Could not verify %s payment %s", payment.provider, payment.transaction_id)
+                return Response(
+                    {"detail": "Could not verify the payment. Please refresh in a moment."},
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
             if is_paid:
-                payment = fulfil_payment(payment.transaction_id, amount, intent)
-            elif is_expired:
+                payment = fulfil_payment(payment.transaction_id, amount, reference)
+            elif is_failed:
                 payment = fail_payment(payment.transaction_id)
         return payment_response(request, payment)
 
@@ -134,12 +148,13 @@ class CancelPaymentView(APIView):
 class DemoCompletePaymentView(APIView):
     """
     POST /api/payments/demo/complete/ {session_id, outcome: success|failure}
-    Only for the demo test gateway (disabled automatically once Stripe keys are set).
+    Only for demo test payments (Card / bKash / Nagad without credentials).
+    Disabled in production unless PAYMENTS_ALLOW_DEMO is on.
     """
 
     def post(self, request):
-        if gateway.stripe_enabled():
-            return Response({"detail": "Demo payments are disabled because Stripe is configured."}, status=status.HTTP_403_FORBIDDEN)
+        if not gateway.demo_allowed():
+            return Response({"detail": "Demo payments are disabled."}, status=status.HTTP_403_FORBIDDEN)
         serializer = DemoCompleteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         payment = own_payment(request, serializer.validated_data["session_id"])

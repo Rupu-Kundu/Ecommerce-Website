@@ -4,6 +4,7 @@ import ErrorMessage from '../components/ErrorMessage'
 import Loader from '../components/Loader'
 import OrderStatusBadge from '../components/OrderStatusBadge'
 import Pagination from '../components/Pagination'
+import { PaymentMark } from '../components/PaymentMethodPicker'
 import ProductImage from '../components/ProductImage'
 import { getErrorMessage } from '../services/api'
 import { getOrders } from '../services/orderService'
@@ -76,7 +77,10 @@ export default function OrdersPage() {
                       {order.items.map((i) => i.product_name).join(', ')}
                     </p>
                   </div>
-                  <span className="text-lg font-bold tabular-nums text-slate-900">{formatPrice(order.total_amount)}</span>
+                  <span className="flex items-center gap-3">
+                    <PaymentMark code={order.payment_method} size="sm" />
+                    <span className="text-lg font-bold tabular-nums text-slate-900">{formatPrice(order.total_amount)}</span>
+                  </span>
                 </Link>
               </li>
             ))}

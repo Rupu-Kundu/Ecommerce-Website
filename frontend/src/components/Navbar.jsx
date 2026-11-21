@@ -217,6 +217,9 @@ export default function Navbar() {
                     <Link to="/orders" role="menuitem" className="block rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">My orders</Link>
                     <Link to="/cart" role="menuitem" className="block rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">My cart</Link>
                     {isAdmin && (
+                      <Link to="/admin-dashboard" role="menuitem" className="block rounded-xl px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50">Admin dashboard</Link>
+                    )}
+                    {isAdmin && (
                       <a href={DJANGO_ADMIN_URL} target="_blank" rel="noreferrer" role="menuitem" className="block rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
                         Admin panel ↗
                       </a>
@@ -285,6 +288,7 @@ export default function Navbar() {
                   </div>
                 </div>
                 <NavLink to="/orders" className={mobileLinkClass}>My orders</NavLink>
+                {isAdmin && <NavLink to="/admin-dashboard" className={mobileLinkClass}>Admin dashboard</NavLink>}
                 {isAdmin && (
                   <a href={DJANGO_ADMIN_URL} target="_blank" rel="noreferrer" className="block rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100">Admin panel ↗</a>
                 )}

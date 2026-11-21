@@ -1,6 +1,7 @@
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -14,6 +15,8 @@ class RegisterView(generics.CreateAPIView):
 
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
+    throttle_scope = "auth"  # limits sign-up spam
+    throttle_classes = [ScopedRateThrottle]
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -35,6 +38,8 @@ class LoginView(TokenObtainPairView):
 
     serializer_class = LoginSerializer
     permission_classes = [AllowAny]
+    throttle_scope = "auth"  # limits password guessing
+    throttle_classes = [ScopedRateThrottle]
 
 
 class LogoutView(APIView):

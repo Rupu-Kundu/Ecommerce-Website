@@ -16,12 +16,13 @@ from orders.models import Order
 from orders.services import cancel_unpaid_order
 from products.models import Product
 
+import logging
+
 from . import gateway
+from .errors import PaymentError  # noqa: F401  (re-exported for views)
 from .models import Payment
 
 
-class PaymentError(Exception):
-    pass
 
 
 def check_stock(order, products=None):
@@ -39,7 +40,7 @@ def check_stock(order, products=None):
     return problems
 
 
-def start_payment(order, user):
+def start_payment(order, user, client_ip=None):
     if order.payment_status != Order.PaymentStatus.PENDING or order.status != Order.Status.PENDING:
         raise PaymentError(f"Order #{order.pk} is not awaiting payment.")
     problems = check_stock(order)
@@ -52,7 +53,7 @@ def start_payment(order, user):
     for old in order.payments.filter(status=Payment.Status.PENDING, provider=Payment.Provider.STRIPE):
         gateway.expire_session(old.transaction_id)
 
-    provider, session_id, url = gateway.create_session(order, user)
+    provider, session_id, url = gateway.create_session(order, user, client_ip)
     with transaction.atomic():
         order.payments.filter(status=Payment.Status.PENDING).update(status=Payment.Status.FAILED)
         payment = Payment.objects.create(
@@ -65,9 +66,18 @@ def start_payment(order, user):
     return payment, url
 
 
+logger = logging.getLogger(__name__)
+
+
 def _refund_and_cancel(payment, order, reason, payment_intent_id=None):
-    if payment.provider == Payment.Provider.STRIPE:
-        gateway.refund(payment_intent_id)
+    try:
+        note = gateway.refund(payment, payment_intent_id)
+    except Exception:
+        logger.exception("Automatic refund failed for payment %s", payment.transaction_id)
+        note = "Our team will refund your payment manually."
+    if payment.provider == Payment.Provider.NAGAD:
+        logger.warning("Nagad payment %s needs a manual refund (order %s).", payment.transaction_id, order.pk)
+    reason = f"{reason} {note}"
     payment.status = Payment.Status.REFUNDED
     payment.save(update_fields=["status", "updated_at"])
     if order.payment_status != Order.PaymentStatus.PAID:  # never undo another successful payment
@@ -92,9 +102,9 @@ def fulfil_payment(transaction_id, amount_paid=None, payment_intent_id=None):
         payment.problem = "Paid amount does not match the order total."
         return payment
     if order.payment_status == Order.PaymentStatus.PAID:
-        return _refund_and_cancel(payment, order, "This order was already paid; the duplicate payment was refunded.", payment_intent_id)
+        return _refund_and_cancel(payment, order, "This order was already paid.", payment_intent_id)
     if order.status == Order.Status.CANCELLED:
-        return _refund_and_cancel(payment, order, "This order was cancelled; the payment was refunded.", payment_intent_id)
+        return _refund_and_cancel(payment, order, "This order was cancelled.", payment_intent_id)
 
     # Lock the products and re-check stock on the server before reducing it.
     items = list(order.items.all())
@@ -103,7 +113,7 @@ def fulfil_payment(transaction_id, amount_paid=None, payment_intent_id=None):
     }
     problems = check_stock(order, products)
     if problems:
-        return _refund_and_cancel(payment, order, " ".join(problems) + " Your payment was refunded.", payment_intent_id)
+        return _refund_and_cancel(payment, order, " ".join(problems), payment_intent_id)
 
     for item in items:
         product = products[item.product_id]
@@ -115,7 +125,9 @@ def fulfil_payment(transaction_id, amount_paid=None, payment_intent_id=None):
     order.status = Order.Status.PAID
     order.payment_status = Order.PaymentStatus.PAID
     order.save(update_fields=["status", "payment_status", "updated_at"])
-    CartItem.objects.filter(cart__user=order.user).delete()  # clear the cart after checkout
+    if order.from_cart:
+        CartItem.objects.filter(cart__user=order.user).delete()  # clear the cart after checkout
+    # "Buy now" orders leave the customer's cart untouched.
     return payment
 
 

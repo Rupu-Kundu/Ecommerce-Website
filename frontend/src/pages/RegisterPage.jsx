@@ -27,7 +27,9 @@ export default function RegisterPage() {
   const { register } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const from = location.state?.from?.pathname || '/'
+  // Return to the page that sent the user here, including its query (e.g. /checkout?buy=7).
+  const fromLocation = location.state?.from
+  const from = fromLocation ? `${fromLocation.pathname}${fromLocation.search || ''}` : '/'
 
   const [form, setForm] = useState(EMPTY_FORM)
   const [fieldErrors, setFieldErrors] = useState({})

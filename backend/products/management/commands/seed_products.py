@@ -2,17 +2,23 @@
 Create sample categories and products for development. Prices are in BDT (৳).
 
 Usage:
-    python manage.py seed_products
+    python manage.py seed_products                 # categories + products
+    python manage.py seed_products --with-images   # also download missing product photos
 
 Safe to run more than once: existing records (matched by name / slug) are left alone,
-so it never changes or duplicates products that already exist.
-Product images are uploaded separately (see docs/IMAGE_CREDITS.md).
+so it never changes or duplicates products that already exist. --with-images only
+fills products that have no image yet. Photos: free Unsplash images (docs/IMAGE_CREDITS.md).
 """
 
+import io
+import urllib.request
 from decimal import Decimal
 
+from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from django.utils.text import slugify
+from PIL import Image
 
 from products.models import Category, Product
 
@@ -66,11 +72,78 @@ PRODUCTS = [
 ]
 
 
+# Unsplash photo id for each product (credits: docs/IMAGE_CREDITS.md)
+IMAGES = {
+    "Wireless Earbuds": "1606841837239-c5a1a4a07af7",
+    "Smartphone X10": "1580910051074-3eb694886505",
+    "Laptop Pro 14": "1496181133206-80ce9b88a853",
+    "USB-C Charger 65W": "1770417999317-64fb254c9e3a",
+    "Smart Watch Fit 2": "1624096104992-9b4fa3a279dd",
+    "Portable Bluetooth Speaker": "1547052178-7f2c5a20c332",
+    "Smart Home Speaker": "1761384409444-2f8359d67a69",
+    "Cotton T-Shirt": "1651761179569-4ba2aa054997",
+    "Denim Jeans": "1714143136372-ddaf8b606da7",
+    "Winter Jacket": "1706765779494-2705542ebe74",
+    "Classic Cotton Hoodie": "1620799140188-3b2a02fd9a77",
+    "Running Sneakers": "1600185365926-3a2ce3cdb9eb",
+    "Braided Leather Belt": "1711443982852-b3df5c563448",
+    "Python Crash Course": "1573496528681-9b0f4fb0c660",
+    "Atomic Habits": "1686764288887-dae4e7d50d58",
+    "The Psychology of Money": "1592496431122-2349e0fbc666",
+    "How Innovation Works": "1589829085413-56de8ae18c73",
+    "Non-stick Frying Pan": "1592156328757-ae2941276b2c",
+    "Ceramic Mug Set": "1523367118146-091f762cd8ea",
+    "Desk Lamp LED": "1570974802254-4b0ad1a755f5",
+    "Electric Kettle 1.7L": "1685514128186-c5d8d7e90e1a",
+    "Acacia Wood Cutting Board": "1587302108992-20648821725d",
+    "Yoga Mat 6mm": "1763004871583-4183d64096b1",
+    "Hex Dumbbell Pair (5 kg)": "1638536532686-d610adfc8e5c",
+    "Football Size 5": "1575361204480-aadea25e6e68",
+    "Insulated Water Bottle 750ml": "1602143407151-7111542de6e8",
+    "Vitamin C Face Serum 30ml": "1781344116880-029945a42b75",
+    "Eau de Parfum 50ml": "1458538977777-0549b2370168",
+    "Daily Sunscreen SPF 50": "1686831451322-8d8e234a51e1",
+    "Ionic Hair Dryer": "1727364438136-6edc10ef0a52",
+}
+IMAGE_URL = "https://images.unsplash.com/photo-{}?w=800&h=800&fit=crop&crop=entropy&q=80&fm=jpg"
+
+
+def download_image(photo_id):
+    """Download a photo and make sure it really is an image before saving it."""
+    with urllib.request.urlopen(IMAGE_URL.format(photo_id), timeout=30) as response:
+        data = response.read(5 * 1024 * 1024)
+    Image.open(io.BytesIO(data)).verify()
+    return data
+
+
 class Command(BaseCommand):
     help = "Seed the database with sample categories and products (prices in BDT)."
 
-    @transaction.atomic
+    def add_arguments(self, parser):
+        parser.add_argument("--with-images", action="store_true", help="Download photos for products without an image.")
+
     def handle(self, *args, **options):
+        self.seed()
+        if options["with_images"]:
+            self.add_images()
+
+    def add_images(self):
+        added = failed = 0
+        for product in Product.objects.filter(name__in=IMAGES.keys()):
+            if product.image:
+                continue
+            try:
+                data = download_image(IMAGES[product.name])
+            except Exception as exc:  # network problems shouldn't stop the seed
+                failed += 1
+                self.stderr.write(f"  could not download image for {product.name}: {exc}")
+                continue
+            product.image.save(f"{slugify(product.name)}-unsplash.jpg", ContentFile(data), save=True)
+            added += 1
+        self.stdout.write(self.style.SUCCESS(f"Images: {added} downloaded, {failed} failed."))
+
+    @transaction.atomic
+    def seed(self):
         categories = {}
         cat_created = 0
         for name, slug, description in CATEGORIES:

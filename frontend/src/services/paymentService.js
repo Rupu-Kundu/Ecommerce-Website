@@ -3,7 +3,7 @@ import api from './api'
 // The browser never sends or sees card details or secret keys. With Stripe the
 // customer pays on Stripe's hosted page; the server then verifies the result.
 
-/** {provider: 'stripe' | 'demo', currency, test_mode} */
+/** {currency, methods: [{code: 'card' | 'bkash' | 'nagad', label, provider, available, demo}]} */
 export async function getPaymentConfig() {
   const { data } = await api.get('/payments/config/')
   return data
@@ -15,9 +15,12 @@ export async function createPaymentSession(orderId) {
   return data
 }
 
-/** Ask the server to verify a payment → {payment, order, detail} */
-export async function confirmPayment(sessionId) {
-  const { data } = await api.post('/payments/confirm/', { session_id: sessionId })
+/**
+ * Ask the server to verify a payment → {payment, order, detail}.
+ * providerStatus: bKash's ?status= (success | failure | cancel) from the redirect, if any.
+ */
+export async function confirmPayment(sessionId, providerStatus) {
+  const { data } = await api.post('/payments/confirm/', { session_id: sessionId, ...(providerStatus && { status: providerStatus }) })
   return data
 }
 

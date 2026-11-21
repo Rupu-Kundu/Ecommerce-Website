@@ -158,7 +158,7 @@ class CheckoutTests(CheckoutTestBase):
         self.mouse.price = Decimal("1250.00")
         self.mouse.save()
         # Client tries to sneak in its own prices — they are ignored.
-        res = self.checkout(subtotal="1.00", total="1.00", items=[{"product_id": self.mouse.pk, "price": "0.01"}])
+        res = self.checkout(subtotal="1.00", total="1.00", price="0.01", line_items=[{"product_id": self.mouse.pk, "price": "0.01"}])
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.data["subtotal"], "2500.00")
         self.assertEqual(res.data["total"], "2620.00")
@@ -287,3 +287,44 @@ class OrderApiTests(CheckoutTestBase):
         Order.objects.filter(pk=refunded).update(status=Order.Status.CANCELLED, payment_status=Order.PaymentStatus.REFUNDED)
         ids = [o["id"] for o in self.client.get(ORDERS_URL).data["results"]]
         self.assertEqual(ids, [refunded])
+
+
+class AdminStatsTests(CheckoutTestBase):
+    create_order = OrderApiTests.create_order
+    login_as = OrderApiTests.login_as
+    mark_paid = OrderApiTests.mark_paid
+
+    def test_stats_admin_only_and_numbers(self):
+        self.fill_cart((self.mouse, 2))
+        paid = self.create_order().data["id"]                        # ৳2,000 + ৳120 = ৳2,120
+        self.mark_paid(paid)
+        self.fill_cart((self.lamp, 1))
+        refunded = self.create_order().data["id"]
+        Order.objects.filter(pk=refunded).update(status="cancelled", payment_status="refunded")
+        self.create_order()                                           # unpaid attempt, not counted
+        self.assertEqual(self.client.get("/api/admin/stats/").status_code, 403)
+        self.login_as("boss", is_staff=True)
+        res = self.client.get("/api/admin/stats/")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["total_sales"], "2120.00")
+        self.assertEqual(res.data["sales_count"], 1)
+        self.assertEqual(res.data["order_count"], 2)
+        self.assertEqual(res.data["open_orders"], 1)
+        self.assertEqual(res.data["orders_by_status"]["cancelled"], 1)
+        self.assertEqual(res.data["low_stock_count"], 2)             # mouse 5, lamp 2 (≤ 5)
+        self.assertEqual(res.data["customer_count"], 1)
+        self.assertEqual([o["id"] for o in res.data["recent_orders"]], [refunded, paid])
+        self.client.credentials()
+        self.assertEqual(self.client.get("/api/admin/stats/").status_code, 401)
+
+    def test_admin_can_filter_orders_by_status(self):
+        self.fill_cart((self.mouse, 1))
+        a = self.create_order().data["id"]
+        self.mark_paid(a)
+        b = self.create_order().data["id"]  # same cart (cart is only cleared by a real payment)
+        self.mark_paid(b)
+        Order.objects.filter(pk=b).update(status="shipped")
+        self.login_as("boss", is_staff=True)
+        res = self.client.get(ORDERS_URL, {"status": "shipped"})
+        self.assertEqual([o["id"] for o in res.data["results"]], [b])
+        self.assertEqual(res.data["results"][0]["customer"]["username"], "alice")

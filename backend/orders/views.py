@@ -1,4 +1,5 @@
-from django.db.models import Prefetch
+from django.contrib.auth import get_user_model
+from django.db.models import Count, Prefetch, Q, Sum
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny
@@ -9,6 +10,8 @@ from rest_framework.views import APIView
 from accounts.models import Address
 from accounts.permissions import IsAdmin
 
+from products.models import LOW_STOCK_THRESHOLD, Product
+
 from .models import Order, OrderItem
 from .serializers import (
     AddressSerializer,
@@ -16,7 +19,7 @@ from .serializers import (
     OrderSerializer,
     OrderStatusUpdateSerializer,
 )
-from .services import CheckoutProblem, create_order, prepare_checkout
+from .services import CheckoutProblem, create_order, prepare_buy_now, prepare_checkout
 from .shipping import SHIPPING_METHODS, shipping_methods_payload
 
 # ---------------- Checkout (Day 2 · Step 2) ----------------
@@ -84,7 +87,7 @@ class CheckoutView(APIView):
 
 
 def orders_for(user):
-    qs = Order.objects.select_related("address").prefetch_related(
+    qs = Order.objects.select_related("address", "user").prefetch_related(
         Prefetch("items", queryset=OrderItem.objects.select_related("product"))
     )
     # Customers only ever see their own orders; admins see everyone's.
@@ -95,7 +98,8 @@ class OrderListCreateView(APIView):
     """
     GET  /api/orders/   order history — orders whose payment was received (paid, or
                         refunded). Unpaid or failed checkout attempts are not listed.
-    POST /api/orders/   {shipping_method, address | address_id} — create an order from the cart.
+    POST /api/orders/   {shipping_method, payment_method, address | address_id, items?}
+                        — create an order from the cart, or ("Buy now") from `items` only.
                         The order waits for payment; see /api/payments/.
     """
 
@@ -103,6 +107,10 @@ class OrderListCreateView(APIView):
         queryset = orders_for(request.user).filter(
             payment_status__in=[Order.PaymentStatus.PAID, Order.PaymentStatus.REFUNDED]
         )
+        # ?status=shipped — filter by order status (used by the admin dashboard)
+        status_filter = request.query_params.get("status")
+        if status_filter in Order.Status.values:
+            queryset = queryset.filter(status=status_filter)
         paginator = api_settings.DEFAULT_PAGINATION_CLASS()
         page = paginator.paginate_queryset(queryset, request, view=self)
         data = OrderSerializer(page, many=True, context={"request": request}).data
@@ -111,8 +119,9 @@ class OrderListCreateView(APIView):
     def post(self, request):
         serializer = CheckoutSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
         try:
-            checkout = prepare_checkout(request, serializer.validated_data)
+            checkout = prepare_buy_now(request, data) if data.get("items") else prepare_checkout(request, data)
         except CheckoutProblem as problem:
             return problem.response
         order = create_order(request, checkout)
@@ -144,3 +153,41 @@ class OrderStatusUpdateView(APIView):
         order.save(update_fields=["status", "updated_at"])
         order = orders_for(request.user).get(pk=order.pk)
         return Response(OrderSerializer(order, context={"request": request}).data)
+
+
+# ---------------- Admin dashboard (Day 2 · Step 5) ----------------
+
+
+class AdminStatsView(APIView):
+    """GET /api/admin/stats/ — numbers for the admin dashboard (admin only)."""
+
+    permission_classes = [IsAdmin]
+
+    def get(self, request):
+        placed = Order.objects.filter(
+            payment_status__in=[Order.PaymentStatus.PAID, Order.PaymentStatus.REFUNDED]
+        )
+        paid = Order.objects.filter(payment_status=Order.PaymentStatus.PAID)
+        by_status = dict(placed.values_list("status").annotate(n=Count("id")).values_list("status", "n"))
+        products = Product.objects.aggregate(
+            total=Count("id"),
+            # every product that needs restocking (same rule as ?low_stock=true)
+            low_stock=Count("id", filter=Q(stock_quantity__lte=LOW_STOCK_THRESHOLD)),
+            out_of_stock=Count("id", filter=Q(stock_quantity=0)),
+        )
+        recent = orders_for(request.user).filter(pk__in=placed.values("pk"))[:5]
+        return Response({
+            "total_sales": f"{paid.aggregate(s=Sum('total_amount'))['s'] or 0:.2f}",
+            "sales_count": paid.count(),
+            "order_count": placed.count(),
+            "open_orders": placed.filter(
+                status__in=[Order.Status.PAID, Order.Status.PROCESSING, Order.Status.SHIPPED]
+            ).count(),
+            "orders_by_status": {code: by_status.get(code, 0) for code in Order.Status.values},
+            "product_count": products["total"],
+            "low_stock_count": products["low_stock"],
+            "out_of_stock_count": products["out_of_stock"],
+            "low_stock_threshold": LOW_STOCK_THRESHOLD,
+            "customer_count": get_user_model().objects.filter(is_staff=False).count(),
+            "recent_orders": OrderSerializer(recent, many=True, context={"request": request}).data,
+        })

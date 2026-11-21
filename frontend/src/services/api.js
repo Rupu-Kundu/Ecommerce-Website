@@ -10,10 +10,30 @@ const api = axios.create({
 })
 
 // Attach the JWT access token to every request automatically.
-api.interceptors.request.use((config) => {
+// After a page reload the access token (kept in memory) is gone until the session is
+// restored. If a refresh token exists, wait for that first — otherwise early requests
+// would be sent as a guest (e.g. an admin opening an unavailable product directly).
+api.interceptors.request.use(async (config) => {
+  const isAuthCall = NO_REFRESH_URLS.some((url) => config.url?.includes(url))
+  if (!getAccessToken() && getRefreshToken() && !isAuthCall) {
+    try {
+      await refreshAccessToken()
+    } catch {
+      // Session could not be restored — continue as a guest.
+    }
+  }
   const token = getAccessToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
+  }
+  // File uploads: let the browser set "multipart/form-data; boundary=…" itself
+  // (the client's default JSON content type would hide the file from the server).
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    if (typeof config.headers.setContentType === 'function') {
+      config.headers.setContentType(false)
+    } else {
+      delete config.headers['Content-Type']
+    }
   }
   return config
 })

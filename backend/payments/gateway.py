@@ -1,12 +1,17 @@
 """
-Payment provider adapter.
+Payment provider adapter — one entry point for every payment method.
 
-- Stripe test mode is used when STRIPE_SECRET_KEY in backend/.env is a real key.
-- Otherwise a built-in DEMO test gateway is used, so the whole flow can be tested
-  locally without a Stripe account. Switching needs no code change — only the key.
+  Card  → Stripe Checkout (test or live)   when STRIPE_SECRET_KEY is set
+  bKash → bKash Tokenized Checkout          when BKASH_* credentials are set   (payments/bkash.py)
+  Nagad → Nagad Merchant API                when NAGAD_* credentials are set   (payments/nagad.py)
 
-Card details never touch this server: with Stripe the customer pays on Stripe's
-hosted Checkout page; the demo gateway asks for no card details at all.
+A method without credentials uses the built-in DEMO test gateway (simulated
+Card / bKash / Nagad pages, no real money) — but only while PAYMENTS_ALLOW_DEMO
+is on (development / tests). In production it is off, so the method is simply
+unavailable until it is configured.
+
+Card numbers, wallet PINs and OTPs never touch this server: customers enter them on
+Stripe / bKash / Nagad pages; the demo pages never send them anywhere.
 """
 
 import uuid
@@ -14,7 +19,11 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from django.conf import settings
 
+from . import bkash, nagad
+from .errors import PaymentError
 from .models import Payment
+
+METHOD_LABELS = {"card": "Card", "bkash": "bKash", "nagad": "Nagad"}
 
 
 def stripe_enabled():
@@ -23,8 +32,42 @@ def stripe_enabled():
     return key.startswith(("sk_test_", "sk_live_", "rk_test_", "rk_live_")) and not is_placeholder
 
 
+def demo_allowed():
+    return settings.PAYMENTS_ALLOW_DEMO
+
+
+def real_provider_for(method):
+    if method == "card" and stripe_enabled():
+        return Payment.Provider.STRIPE
+    if method == "bkash" and bkash.enabled():
+        return Payment.Provider.BKASH
+    if method == "nagad" and nagad.enabled():
+        return Payment.Provider.NAGAD
+    return None
+
+
+def provider_for(method):
+    """The provider that will handle `method`, or None if the method is unavailable."""
+    return real_provider_for(method) or (Payment.Provider.DEMO if demo_allowed() else None)
+
+
+def payment_methods_payload():
+    methods = []
+    for code, label in METHOD_LABELS.items():
+        provider = provider_for(code)
+        methods.append({
+            "code": code,
+            "label": label,
+            "provider": provider,
+            "available": provider is not None,
+            "demo": provider == Payment.Provider.DEMO,
+        })
+    return methods
+
+
 def active_provider():
-    return Payment.Provider.STRIPE if stripe_enabled() else Payment.Provider.DEMO
+    """Provider for card payments (kept for backwards compatibility)."""
+    return provider_for("card")
 
 
 def _stripe():
@@ -43,13 +86,23 @@ def from_minor_units(value):
     return (Decimal(value) / 100).quantize(Decimal("0.01"))
 
 
-def create_session(order, user):
+def create_session(order, user, client_ip=None):
     """Start a payment for `order`. Returns (provider, session_id, checkout_url)."""
     frontend = settings.FRONTEND_URL
-    if not stripe_enabled():
+    provider = provider_for(order.payment_method)
+    if provider is None:
+        raise PaymentError(f"{METHOD_LABELS.get(order.payment_method, 'This')} payments are not available right now.")
+
+    if provider == Payment.Provider.DEMO:
         session_id = f"demo_{uuid.uuid4().hex}"
         url = f"{frontend}/payment/demo?session_id={session_id}&order={order.pk}"
-        return Payment.Provider.DEMO, session_id, url
+        return provider, session_id, url
+    if provider == Payment.Provider.BKASH:
+        payment_id, url = bkash.create_payment(order, user, f"{frontend}/payment/success/bkash")
+        return provider, payment_id, url
+    if provider == Payment.Provider.NAGAD:
+        reference, url = nagad.create_payment(order, user, f"{frontend}/payment/success/nagad", client_ip)
+        return provider, reference, url
 
     currency = settings.PAYMENT_CURRENCY
     line_items = [
@@ -102,9 +155,35 @@ def expire_session(session_id):
         pass
 
 
-def refund(payment_intent_id):
-    if payment_intent_id:
-        _stripe().Refund.create(payment_intent=payment_intent_id)
+def verify(payment, params=None, client_ip=None):
+    """
+    Ask the real provider whether `payment` was paid.
+    Returns (is_paid, is_failed, amount_paid, provider_reference).
+    """
+    params = params or {}
+    if payment.provider == Payment.Provider.STRIPE:
+        is_paid, is_expired, amount, intent = retrieve_session(payment.transaction_id)
+        return is_paid, is_expired, amount, intent
+    if payment.provider == Payment.Provider.BKASH:
+        return bkash.verify(payment.transaction_id, params.get("status"))
+    if payment.provider == Payment.Provider.NAGAD:
+        return nagad.verify(payment.transaction_id, client_ip)
+    return False, False, None, None  # demo payments are completed on the demo page
+
+
+def refund(payment, reference):
+    """Give the money back (used when stock ran out during payment). Returns a note."""
+    if payment.provider == Payment.Provider.STRIPE:
+        if reference:
+            _stripe().Refund.create(payment_intent=reference)
+        return "Your payment was refunded."
+    if payment.provider == Payment.Provider.BKASH:
+        bkash.refund(payment.transaction_id, reference, payment.amount)
+        return "Your payment was refunded to your bKash account."
+    if payment.provider == Payment.Provider.NAGAD:
+        # Nagad refunds are issued from the Nagad merchant panel.
+        return "Your payment will be refunded to your Nagad account."
+    return "Your payment was refunded."
 
 
 def construct_webhook_event(payload, signature):

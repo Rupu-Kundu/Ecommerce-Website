@@ -1,12 +1,29 @@
+from django.utils.text import slugify
 from rest_framework import serializers
 
 from .models import Category, Product
 
 
 class CategorySerializer(serializers.ModelSerializer):
+    # Optional when creating: generated from the name if left empty.
+    slug = serializers.SlugField(max_length=120, required=False, allow_blank=True)
+    product_count = serializers.IntegerField(read_only=True, required=False)
+
     class Meta:
         model = Category
-        fields = ("id", "name", "slug", "description")
+        fields = ("id", "name", "slug", "description", "product_count")
+
+    def validate(self, attrs):
+        if not attrs.get("slug") and attrs.get("name"):
+            attrs["slug"] = slugify(attrs["name"])[:120]
+        slug = attrs.get("slug")
+        if slug:
+            clash = Category.objects.filter(slug=slug)
+            if self.instance:
+                clash = clash.exclude(pk=self.instance.pk)
+            if clash.exists():
+                raise serializers.ValidationError({"slug": "A category with this slug already exists."})
+        return attrs
 
 
 class ProductSerializer(serializers.ModelSerializer):

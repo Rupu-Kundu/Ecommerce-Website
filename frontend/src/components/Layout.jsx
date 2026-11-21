@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
+import ChatWidget from './ChatWidget'
 import Footer from './Footer'
 import Navbar from './Navbar'
 
@@ -18,6 +19,7 @@ export default function Layout() {
         <Outlet />
       </main>
       <Footer />
+      <ChatWidget />
     </div>
   )
 }

@@ -1,6 +1,9 @@
 from django.core.validators import MinValueValidator
 from django.db import models
 
+# A product with this many units or fewer counts as "low stock" on the admin dashboard.
+LOW_STOCK_THRESHOLD = 5
+
 
 class Category(models.Model):
     name = models.CharField(max_length=100, unique=True)

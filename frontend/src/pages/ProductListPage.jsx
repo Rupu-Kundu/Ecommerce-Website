@@ -91,7 +91,7 @@ export default function ProductListPage() {
   const totalPages = Math.ceil(data.count / PAGE_SIZE)
   const hasFilters = search || category || ordering !== '-created_at'
   const selectClass =
-    'rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200'
+    'min-w-0 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200'
 
   return (
     <div>
@@ -112,7 +112,7 @@ export default function ProductListPage() {
             Search
           </button>
         </form>
-        <div className="flex gap-2">
+        <div className="flex min-w-0 gap-2">
           <select
             aria-label="Filter by category"
             value={category}

@@ -11,9 +11,11 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 import os
+import sys
 from datetime import timedelta
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -23,16 +25,29 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
 
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
+# All secrets and environment-specific values come from environment variables (.env).
+# Deployment checklist: docs/SECURITY_CHECKLIST.md  ·  `python manage.py check --deploy`
+
+def env_bool(name, default=False):
+    return os.getenv(name, str(default)).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def env_list(name, default=''):
+    return [v.strip() for v in os.getenv(name, default).split(',') if v.strip()]
+
+
+# True while running `manage.py test` (used to relax rate limits for the test suite).
+TESTING = len(sys.argv) > 1 and sys.argv[1] == 'test'
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
+if not SECRET_KEY:
+    raise ImproperlyConfigured('DJANGO_SECRET_KEY is not set. Copy backend/.env.example to backend/.env.')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DJANGO_DEBUG', 'False') == 'True'
+DEBUG = env_bool('DJANGO_DEBUG', False)  # False unless explicitly enabled
 
-ALLOWED_HOSTS = [h.strip() for h in os.getenv('DJANGO_ALLOWED_HOSTS', '').split(',') if h.strip()]
+ALLOWED_HOSTS = env_list('DJANGO_ALLOWED_HOSTS')
 
 
 # Application definition
@@ -56,6 +71,7 @@ INSTALLED_APPS = [
     'cart',
     'orders',
     'payments',
+    'assistant',
 ]
 
 MIDDLEWARE = [
@@ -139,6 +155,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'  # `manage.py collectstatic` target for production
 
 # Media files (uploaded product images)
 MEDIA_URL = 'media/'
@@ -155,9 +172,9 @@ AUTH_USER_MODEL = 'accounts.User'
 
 
 # CORS — allow the React dev server (origins come from .env)
-CORS_ALLOWED_ORIGINS = [
-    o.strip() for o in os.getenv('CORS_ALLOWED_ORIGINS', '').split(',') if o.strip()
-]
+# Only the listed frontend origins may call the API from a browser (never "allow all").
+CORS_ALLOWED_ORIGINS = env_list('CORS_ALLOWED_ORIGINS')
+CSRF_TRUSTED_ORIGINS = env_list('CSRF_TRUSTED_ORIGINS')
 
 
 # Django REST Framework
@@ -172,6 +189,20 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 12,
+    # Consistent JSON errors; unexpected errors never leak stack traces.
+    'EXCEPTION_HANDLER': 'config.exceptions.api_exception_handler',
+    # Rate limits. "auth" protects login/register against password guessing.
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '10000/day' if TESTING else os.getenv('THROTTLE_ANON', '300/hour'),
+        'user': '100000/day' if TESTING else os.getenv('THROTTLE_USER', '3000/hour'),
+        'auth': '10000/minute' if TESTING else os.getenv('THROTTLE_AUTH', '10/minute'),
+        # AI assistant: protects the Claude API bill from abuse
+        'chat': '10000/minute' if TESTING else os.getenv('THROTTLE_CHAT', '20/minute'),
+    },
 }
 
 
@@ -196,3 +227,56 @@ STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY', '')
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
 PAYMENT_CURRENCY = 'bdt'
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173').rstrip('/')
+
+# bKash Tokenized Checkout (sandbox by default). Real bKash is used once all four
+# credentials are set; otherwise bKash payments use the demo test gateway.
+BKASH_BASE_URL = os.getenv('BKASH_BASE_URL', 'https://tokenized.sandbox.bka.sh/v1.2.0-beta')
+BKASH_APP_KEY = os.getenv('BKASH_APP_KEY', '')
+BKASH_APP_SECRET = os.getenv('BKASH_APP_SECRET', '')
+BKASH_USERNAME = os.getenv('BKASH_USERNAME', '')
+BKASH_PASSWORD = os.getenv('BKASH_PASSWORD', '')
+
+# Nagad Merchant API (sandbox by default). Keys are base64 (or PEM) RSA keys.
+NAGAD_BASE_URL = os.getenv('NAGAD_BASE_URL', 'http://sandbox.mynagad.com:10080/remote-payment-gateway-1.0')
+NAGAD_MERCHANT_ID = os.getenv('NAGAD_MERCHANT_ID', '')
+NAGAD_MERCHANT_NUMBER = os.getenv('NAGAD_MERCHANT_NUMBER', '')
+NAGAD_MERCHANT_PRIVATE_KEY = os.getenv('NAGAD_MERCHANT_PRIVATE_KEY', '')
+NAGAD_PG_PUBLIC_KEY = os.getenv('NAGAD_PG_PUBLIC_KEY', '')
+
+# Demo test gateway (simulated Card / bKash / Nagad pages, no real money).
+# On by default in development and tests; OFF in production unless explicitly allowed,
+# so a missing gateway configuration can never lead to unpaid "paid" orders.
+PAYMENTS_ALLOW_DEMO = env_bool('PAYMENTS_ALLOW_DEMO', DEBUG or TESTING)
+
+
+# ---------------- Security headers & HTTPS ----------------
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = 'same-origin'
+X_FRAME_OPTIONS = 'DENY'
+
+if not DEBUG:
+    # Production: HTTPS only. (SECURE_SSL_REDIRECT can be turned off when a proxy
+    # already redirects, e.g. some hosting platforms.)
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = env_bool('SECURE_SSL_REDIRECT', True) and not TESTING
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', '31536000'))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = env_bool('SECURE_HSTS_PRELOAD', False)
+
+
+# ---------------- Logging ----------------
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {'console': {'class': 'logging.StreamHandler'}},
+    'root': {'handlers': ['console'], 'level': os.getenv('LOG_LEVEL', 'INFO')},
+    'loggers': {'django': {'handlers': ['console'], 'level': 'WARNING', 'propagate': False}},
+}
+
+
+# ---------------- AI shopping assistant (Claude) ----------------
+# The key stays on the server. Without it the chat widget shows "not set up yet".
+ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
+ASSISTANT_MODEL = os.getenv('ASSISTANT_MODEL', 'claude-opus-5-5')

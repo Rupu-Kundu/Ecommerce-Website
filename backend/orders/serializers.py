@@ -39,12 +39,22 @@ class AddressSerializer(serializers.ModelSerializer):
         return value
 
 
+class BuyNowItemSerializer(serializers.Serializer):
+    product_id = serializers.IntegerField()
+    quantity = serializers.IntegerField(min_value=1, max_value=99)
+
+
 class CheckoutSerializer(serializers.Serializer):
-    """Either pick a saved address (address_id) or send a new one (address)."""
+    """
+    Either pick a saved address (address_id) or send a new one (address).
+    `items` (optional) = "Buy now": order just these products instead of the cart.
+    """
 
     address_id = serializers.IntegerField(required=False)
     address = AddressSerializer(required=False)
     shipping_method = serializers.ChoiceField(choices=list(SHIPPING_METHODS.keys()))
+    payment_method = serializers.ChoiceField(choices=["card", "bkash", "nagad"], default="card")
+    items = BuyNowItemSerializer(many=True, required=False, allow_empty=False, max_length=1)
 
     def validate(self, attrs):
         has_id = "address_id" in attrs
@@ -60,6 +70,13 @@ class CheckoutSerializer(serializers.Serializer):
                 raise serializers.ValidationError({"address_id": "Address not found."})
             attrs["address_obj"] = address
         return attrs
+
+    def validate_payment_method(self, value):
+        from payments.gateway import METHOD_LABELS, provider_for  # avoid circular import
+
+        if provider_for(value) is None:
+            raise serializers.ValidationError(f"{METHOD_LABELS[value]} payments are not available right now.")
+        return value
 
 
 # ---------------- Orders ----------------
@@ -93,15 +110,18 @@ class OrderSerializer(serializers.ModelSerializer):
     address = AddressSerializer(read_only=True)
     shipping_method_label = serializers.SerializerMethodField()
     item_count = serializers.SerializerMethodField()
+    customer = serializers.SerializerMethodField()
     status_label = serializers.CharField(source="get_status_display", read_only=True)
     payment_status_label = serializers.CharField(source="get_payment_status_display", read_only=True)
+    payment_method_label = serializers.CharField(source="get_payment_method_display", read_only=True)
 
     class Meta:
         model = Order
         fields = (
             "id", "status", "status_label", "payment_status", "payment_status_label",
+            "payment_method", "payment_method_label", "from_cart",
             "subtotal", "shipping_method", "shipping_method_label", "shipping_cost", "total_amount",
-            "item_count", "items", "address", "created_at", "updated_at",
+            "item_count", "items", "address", "customer", "created_at", "updated_at",
         )
         read_only_fields = fields
 
@@ -110,6 +130,9 @@ class OrderSerializer(serializers.ModelSerializer):
 
     def get_item_count(self, obj):
         return sum(item.quantity for item in obj.items.all())
+
+    def get_customer(self, obj):
+        return {"id": obj.user_id, "username": obj.user.username, "email": obj.user.email}
 
 
 # Order statuses that only make sense once the payment has been received.

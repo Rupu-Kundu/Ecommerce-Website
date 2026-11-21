@@ -8,6 +8,8 @@ from accounts.models import Address
 from cart.serializers import serialize_cart
 from cart.services import cart_items, cart_subtotal, get_cart, sync_cart
 
+from products.models import Product
+
 from .models import Order, OrderItem
 from .shipping import shipping_cost
 
@@ -59,6 +61,10 @@ def prepare_checkout(request, data):
             status=status.HTTP_409_CONFLICT,
         ))
 
+    return _summary(request, data, items, from_cart=True)
+
+
+def _summary(request, data, items, from_cart):
     address = data.get("address_obj") or save_address(request.user, data["address"])
     subtotal = cart_subtotal(items)
     method = data["shipping_method"]
@@ -70,7 +76,36 @@ def prepare_checkout(request, data):
         "shipping_method": method,
         "shipping_cost": shipping,
         "total": subtotal + shipping,
+        "payment_method": data.get("payment_method", "card"),
+        "from_cart": from_cart,
     }
+
+
+class BuyNowItem:
+    """Same shape as a cart item (product + quantity) so orders are built the same way."""
+
+    def __init__(self, product, quantity):
+        self.product = product
+        self.quantity = quantity
+
+
+def prepare_buy_now(request, data):
+    """
+    "Buy now": check out only the given product(s), leaving the cart untouched.
+    Stock and price come from the database, exactly like a cart checkout.
+    """
+    items = []
+    for line in data["items"]:
+        product = Product.objects.filter(pk=line["product_id"], is_available=True).first()
+        if product is None or product.stock_quantity == 0:
+            raise CheckoutProblem(Response({"detail": "This product is no longer available."}, status=status.HTTP_400_BAD_REQUEST))
+        if line["quantity"] > product.stock_quantity:
+            raise CheckoutProblem(Response(
+                {"detail": f'Only {product.stock_quantity} of "{product.name}" in stock.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            ))
+        items.append(BuyNowItem(product, line["quantity"]))
+    return _summary(request, data, items, from_cart=False)
 
 
 @transaction.atomic
@@ -95,6 +130,8 @@ def create_order(request, checkout):
         shipping_method=checkout["shipping_method"],
         shipping_cost=checkout["shipping_cost"],
         total_amount=checkout["total"],
+        payment_method=checkout["payment_method"],
+        from_cart=checkout["from_cart"],
     )
     OrderItem.objects.bulk_create([
         OrderItem(
