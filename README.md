@@ -266,6 +266,21 @@ curl -H "Authorization: Bearer <admin access token>" "http://127.0.0.1:8000/api/
 The dashboard has its own full-screen layout (`frontend/src/pages/admin/AdminLayout.jsx`), separate from
 the store's navbar/footer. Its code is lazy-loaded, so store visitors never download it.
 
+| Route | Page |
+|---|---|
+| `/admin-dashboard` | Overview (`?days=7\|30\|90`) |
+| `/admin-dashboard/orders` | Orders (`?order=<id>` opens the details drawer) |
+| `/admin-dashboard/payments` | Payments (`?payment=<id>` opens the details drawer) |
+| `/admin-dashboard/products` · `/categories` | Catalog |
+| `/admin-dashboard/customers` · `/customers/<id>` | Customers and one customer's page |
+| `/admin-dashboard/chat` | Live chat inbox |
+
+**Access:** every admin route is guarded twice: in the browser, guests go to `/login` and customers go back to
+the store home; on the server, every admin API (`IsAdmin`) returns **401** to guests and **403** to customers,
+so hiding the UI is never the only protection. Payments are read-only for admins (writes → 405).
+Lists use `select_related` / `prefetch_related` / annotations, so the number of SQL queries stays the same
+however many rows a page has (checked by a test, see *Run tests*).
+
 - **Admin shell:** sidebar grouped into Overview / Sales / Catalog / Customers, current page highlighted,
   unread live-chat badge; top bar with page title, chat bell and account menu (View store, Logout).
   On phones the sidebar becomes a ☰ drawer (closes on navigation, Esc or tapping outside).
@@ -366,6 +381,18 @@ cd frontend && npm test                                           # React unit t
 cd frontend && npm run lint && npm run build                      # lint + production build
 ```
 
+What the tests cover for the admin dashboard:
+
+- **Backend** (`python manage.py test`): admin stats and period analytics, customers, payments
+  (`payments/tests_admin.py`), order / product admin filters (`orders/tests_admin_lists.py`), permissions
+  (guest 401, customer 403) on every admin API, and `config/tests_admin_performance.py`, which fails if
+  any admin list (customers, payments, orders, products, stats) runs more SQL queries for 15 rows than for 3 (N+1 guard).
+- **Frontend** (`npm test`): each admin page renders real API data, filters and sort update the URL, drawers
+  open from the URL, empty / error states, and the status rules (a cash-on-delivery order never offers "Paid").
+- **Browser (manual / Playwright, against the running app):** every sidebar link and admin route, guest and
+  customer redirects, the 375px phone layout (no sideways scroll, ☰ drawer), and that the dashboard numbers match
+  the database.
+
 ## Status
 
 - [x] Day 1 — Step 1: Project Planning and Setup
@@ -388,4 +415,4 @@ cd frontend && npm run lint && npm run build                      # lint + produ
 - [x] Admin dashboard redesign — Step 3: Customer management
 - [x] Admin dashboard redesign — Step 4: Payment management
 - [x] Admin dashboard redesign — Step 5: Products / Categories / Orders in the new design
-- [ ] Admin dashboard redesign — Step 6: Final testing & docs
+- [x] Admin dashboard redesign — Step 6: Final testing & docs (all routes, access rules, 375px, N+1 guard)

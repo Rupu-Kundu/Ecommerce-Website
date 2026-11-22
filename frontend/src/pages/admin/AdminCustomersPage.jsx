@@ -1,14 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { ActiveBadge, Avatar } from '../../components/admin/CustomerBits'
+import { EmptyState, ErrorBanner, FilterSelect, ListSkeleton, SearchBox, SummaryChip } from '../../components/admin/ListControls'
+import { cardClass } from '../../components/admin/styles'
 import ErrorMessage from '../../components/ErrorMessage'
 import Pagination from '../../components/Pagination'
+import useApiData from '../../hooks/useApiData'
+import useUrlFilters from '../../hooks/useUrlFilters'
 import { getAdminCustomers } from '../../services/adminService'
-import { getErrorMessage } from '../../services/api'
 import { formatDate, formatPrice } from '../../utils/format'
 
 const PAGE_SIZE = 12 // the API's page size
-const SEARCH_DELAY = 300
 
 const FILTERS = [
   { key: 'status', label: 'Status', options: [['', 'All statuses'], ['active', 'Active'], ['inactive', 'Inactive']] },
@@ -21,102 +22,19 @@ const FILTERS = [
   },
 ]
 
-const card = 'rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-900/[0.03]'
-const select = 'w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-100'
-
-function SummaryChip({ label, value, testId }) {
-  return (
-    <div className={`${card} px-4 py-3`}>
-      <p className="text-xs font-medium text-slate-500">{label}</p>
-      <p className="text-xl font-bold text-slate-900" data-testid={testId}>{value}</p>
-    </div>
-  )
-}
-
-function RowsSkeleton() {
-  return (
-    <div className="divide-y divide-slate-100" aria-label="Loading customers" aria-busy="true">
-      {Array.from({ length: 6 }, (_, i) => (
-        <div key={i} className="flex items-center gap-3 px-5 py-4">
-          <span className="h-9 w-9 animate-pulse rounded-full bg-slate-200" />
-          <span className="h-4 flex-1 animate-pulse rounded bg-slate-200" />
-          <span className="hidden h-4 w-24 animate-pulse rounded bg-slate-200 sm:block" />
-        </div>
-      ))}
-    </div>
-  )
-}
-
 export default function AdminCustomersPage() {
-  const [params, setParams] = useSearchParams()
+  const { values, page, update } = useUrlFilters(['search', ...FILTERS.map((f) => f.key)])
   const navigate = useNavigate()
-  const page = Math.max(1, Number(params.get('page')) || 1)
-  const search = params.get('search') || ''
-  const filters = Object.fromEntries(FILTERS.map((f) => [f.key, params.get(f.key) || '']))
-
-  const [searchInput, setSearchInput] = useState(search)
-  const [syncedSearch, setSyncedSearch] = useState(search)
-  if (search !== syncedSearch) {
-    // URL changed from outside (back button, "Clear filters") → show it in the box
-    setSyncedSearch(search)
-    setSearchInput(search)
-  }
-
-  const [data, setData] = useState(null)
-  const [error, setError] = useState('')
-  const [reloadKey, setReloadKey] = useState(0)
-  const queryJson = JSON.stringify({ search, ...filters, page })
-  const requestKey = `${queryJson}#${reloadKey}`
-  const [settledKey, setSettledKey] = useState(null)
-  const loading = settledKey !== requestKey
-
-  // React Router applies URL changes in a transition, so two quick changes (e.g. two filters
-  // in a row) could each start from the old URL and undo each other. Build every change on
-  // top of the newest URL we asked for; drop that copy once the router has caught up.
-  const pendingParams = useRef(null)
-  useEffect(() => {
-    pendingParams.current = null
-  }, [params])
-
-  function update(changes, { resetPage = true } = {}) {
-    const next = new URLSearchParams(pendingParams.current ?? params)
-    Object.entries(changes).forEach(([k, v]) => (v ? next.set(k, v) : next.delete(k)))
-    if (resetPage) next.delete('page')
-    pendingParams.current = next
-    setParams(next, { replace: true })
-  }
-
-  // Search as you type (debounced) — the URL is the source of truth.
-  useEffect(() => {
-    if (searchInput.trim() === search) return undefined
-    const t = setTimeout(() => {
-      setSyncedSearch(searchInput.trim())
-      update({ search: searchInput.trim() })
-    }, SEARCH_DELAY)
-    return () => clearTimeout(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchInput])
-
-  useEffect(() => {
-    let cancelled = false
-    const key = `${queryJson}#${reloadKey}`
-    getAdminCustomers(JSON.parse(queryJson))
-      .then((d) => {
-        if (cancelled) return
-        setData(d)
-        setError('')
-      })
-      .catch((err) => {
-        if (cancelled) return
-        if (err.response?.status === 404 && page > 1) update({ page: '' }) // page no longer exists
-        else setError(getErrorMessage(err, 'Could not load customers.'))
-      })
-      .finally(() => !cancelled && setSettledKey(key))
-    return () => {
-      cancelled = true
+  const search = values.search
+  const filters = Object.fromEntries(FILTERS.map((f) => [f.key, values[f.key]]))
+  const query = { search, ...filters, page }
+  const { data, error, loading, reload } = useApiData(JSON.stringify(query), () => getAdminCustomers(query), 'Could not load customers.', (err) => {
+    if (err.response?.status === 404 && page > 1) {
+      update({ page: '' }) // page no longer exists
+      return true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queryJson, reloadKey])
+    return false
+  })
 
   const hasFilters = Boolean(search || FILTERS.some((f) => filters[f.key] && f.key !== 'ordering'))
   const totalPages = data ? Math.max(1, Math.ceil(data.count / PAGE_SIZE)) : 1
@@ -133,7 +51,7 @@ export default function AdminCustomersPage() {
         </div>
       )}
 
-      <section className={card} aria-labelledby="customers-heading">
+      <section className={cardClass} aria-labelledby="customers-heading">
         {/* Filters: one row above the list */}
         <div className="space-y-3 border-b border-slate-200 p-4 sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -148,52 +66,29 @@ export default function AdminCustomersPage() {
             )}
           </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr_1fr]">
-            <div className="relative sm:col-span-2 lg:col-span-1">
-              <label htmlFor="customer-search" className="sr-only">Search customers</label>
-              <svg viewBox="0 0 24 24" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
-              </svg>
-              <input
-                id="customer-search"
-                type="search"
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="Search name, username, email or phone…"
-                maxLength={100}
-                className={`${select} pl-9`}
-              />
+            <div className="sm:col-span-2 lg:col-span-1">
+              <SearchBox id="customer-search" label="Search customers" value={search} onSearch={(v) => update({ search: v })} placeholder="Search name, username, email or phone…" />
             </div>
             {FILTERS.map((f) => (
-              <div key={f.key}>
-                <label htmlFor={`filter-${f.key}`} className="sr-only">{f.label}</label>
-                <select id={`filter-${f.key}`} value={filters[f.key]} onChange={(e) => update({ [f.key]: e.target.value })} className={select}>
-                  {f.options.map(([v, text]) => <option key={v} value={v}>{text}</option>)}
-                </select>
-              </div>
+              <FilterSelect key={f.key} id={`filter-${f.key}`} label={f.label} value={filters[f.key]} options={f.options} onChange={(v) => update({ [f.key]: v })} />
             ))}
           </div>
         </div>
 
         {/* List */}
         {!data && loading ? (
-          <RowsSkeleton />
+          <ListSkeleton label="Loading customers" />
         ) : !data && error ? (
-          <div className="p-5"><ErrorMessage message={error} onRetry={() => setReloadKey((k) => k + 1)} /></div>
+          <div className="p-5"><ErrorMessage message={error} onRetry={reload} /></div>
         ) : (
           <div className={`transition-opacity ${loading ? 'opacity-60' : ''}`} aria-busy={loading}>
-            {error && (
-              <div role="alert" className="m-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
-                {error}
-                <button type="button" onClick={() => setReloadKey((k) => k + 1)} className="font-semibold underline">Try again</button>
-              </div>
-            )}
+            {error && <ErrorBanner message={error} onRetry={reload} />}
             {data.results.length === 0 ? (
-              <div className="px-5 py-14 text-center" data-testid="customers-empty">
-                <p className="font-semibold text-slate-900">{hasFilters ? 'No customers match these filters' : 'No customers yet'}</p>
-                <p className="mt-1 text-sm text-slate-500">
-                  {hasFilters ? 'Try a different search or clear the filters.' : 'Customers appear here as soon as they register.'}
-                </p>
-              </div>
+              <EmptyState
+                testId="customers-empty"
+                title={hasFilters ? 'No customers match these filters' : 'No customers yet'}
+                hint={hasFilters ? 'Try a different search or clear the filters.' : 'Customers appear here as soon as they register.'}
+              />
             ) : (
               <>
                 {/* Table on wider screens */}
@@ -259,7 +154,7 @@ export default function AdminCustomersPage() {
               </>
             )}
             <div className="px-4 pb-5">
-              <Pagination page={page} totalPages={totalPages} onChange={(p) => update({ page: p > 1 ? String(p) : '' }, { resetPage: false })} />
+              <Pagination page={page} totalPages={totalPages} onChange={(p) => update({ page: p > 1 ? p : '' }, { resetPage: false })} />
             </div>
           </div>
         )}
