@@ -15,3 +15,18 @@ export function formatPrice(value) {
 export function formatDate(iso) {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
+
+/** Compact money for chart axes/labels: 950 → "৳950", 12900 → "৳12.9K", 4200000 → "৳4.2M" */
+export function formatCompactPrice(value) {
+  const n = Number(value) || 0
+  const abs = Math.abs(n)
+  if (abs >= 1e6) return `৳${(n / 1e6).toFixed(abs >= 1e7 ? 0 : 1).replace(/\.0$/, '')}M`
+  if (abs >= 1e4) return `৳${(n / 1e3).toFixed(abs >= 1e5 ? 0 : 1).replace(/\.0$/, '')}K`
+  return formatPrice(Math.round(n))
+}
+
+/** "2026-11-22" → "22 Nov" */
+export function formatShortDate(isoDate) {
+  const [y, m, d] = isoDate.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+}

@@ -14,7 +14,7 @@ const STYLES = {
 export default function OrderStatusBadge({ status, label }) {
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset ring-transparent ${STYLES[status] || STYLES.pending}`}
+      className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset ring-transparent ${STYLES[status] || STYLES.pending}`}
       data-testid="status-badge"
     >
       {label || status}

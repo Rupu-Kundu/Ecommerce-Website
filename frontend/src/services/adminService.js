@@ -3,8 +3,9 @@ import api from './api'
 // Admin-only calls. The backend checks the admin role on every request —
 // hiding the dashboard in the UI is a convenience, not the security boundary.
 
-export async function getAdminStats() {
-  const { data } = await api.get('/admin/stats/')
+/** Dashboard numbers. days = 7 | 30 | 90 → all-time totals + that period vs the previous one. */
+export async function getAdminStats(days = 30) {
+  const { data } = await api.get('/admin/stats/', { params: { days } })
   return data
 }
 

@@ -88,7 +88,7 @@ Product photos: free Unsplash images, credited in [docs/IMAGE_CREDITS.md](docs/I
 | `/help` | Help center (shipping, returns, payment, FAQ, store map) | Public |
 | `/payment/demo` · `/payment/success` · `/payment/cancel` | Test payment pages | Logged-in users |
 | `/orders` · `/orders/:id` | Order history and order details | Logged-in users |
-| `/admin-dashboard` (+ `/products`, `/categories`, `/orders`, `/chat`) | Admin dashboard, incl. Live chat inbox | Admins only |
+| `/admin-dashboard` (+ `/products`, `/categories`, `/orders`, `/chat`) | Admin dashboard (own sidebar layout), incl. Live chat inbox | Admins only |
 | `*` | 404 Not Found | Public |
 
 Auth: the access token is kept in memory, the refresh token in `localStorage`. The Axios client
@@ -222,10 +222,54 @@ See [docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md) for setup and test credentials.
 
 | Method | Endpoint | Description |
 |---|---|---|
-| GET | `/api/admin/stats/` | Total sales, current orders, low-stock count, recent orders |
+| GET | `/api/admin/stats/?days=7\|30\|90` | Dashboard numbers: all-time totals + analytics for the period vs the previous one (see below) |
 | POST / PATCH / DELETE | `/api/categories/` · `/api/categories/<id>/` | Manage categories (delete refused while products use it) |
 | GET | `/api/products/?low_stock=true` | Products with 5 or fewer in stock |
 | GET | `/api/orders/?status=shipped` | Filter orders by status |
+
+#### `GET /api/admin/stats/?days=` — dashboard analytics
+
+`days` is `7`, `30` or `90` (default **30**; any other value → `400 {"days": "Use one of 7, 30, 90."}`).
+Admins only (guest 401, customer 403). The period is the last *N* calendar days in **Bangladesh time
+(Asia/Dhaka)**, including today, compared with the *N* days just before it. Everything comes from real
+orders, users and products (`backend/orders/analytics.py`).
+
+| Field | Meaning |
+|---|---|
+| `total_sales`, `sales_count`, `order_count`, `open_orders`, `orders_by_status`, `product_count`, `low_stock_count`, `out_of_stock_count`, `low_stock_threshold`, `customer_count`, `recent_orders` | All-time figures (unchanged from before) |
+| `period` | `{days, start, end, previous_start, previous_end}` (local dates) |
+| `kpis.revenue` | Sum of **paid** orders in the period (cash on delivery counts once delivered) |
+| `kpis.orders` | Orders really placed (paid, refunded, or confirmed cash on delivery); unpaid attempts are ignored |
+| `kpis.average_order_value`, `kpis.paid_orders` | Revenue ÷ paid orders, and their count |
+| `kpis.new_customers`, `kpis.new_products` | Accounts / products created in the period |
+| `daily` | One row per day (zero-filled): `{date, revenue, orders}` |
+| `status_breakdown` | Orders placed in the period per status |
+| `payment_methods` | Per method: `{method, label, orders, revenue}` |
+| `top_products` | Top 5 by revenue from paid orders: `{product_id, name, quantity, revenue, image}` |
+
+Each KPI is `{value, previous, change_pct}`; `change_pct` is the % change vs the previous period, or
+`null` when the previous period is 0 (shown as "New").
+
+```bash
+curl -H "Authorization: Bearer <admin access token>" "http://127.0.0.1:8000/api/admin/stats/?days=7"
+```
+
+### Admin dashboard (frontend)
+
+The dashboard has its own full-screen layout (`frontend/src/pages/admin/AdminLayout.jsx`), separate from
+the store's navbar/footer. Its code is lazy-loaded, so store visitors never download it.
+
+- **Admin shell:** sidebar grouped into Overview / Sales / Catalog / Customers, current page highlighted,
+  unread live-chat badge; top bar with page title, chat bell and account menu (View store, Logout).
+  On phones the sidebar becomes a ☰ drawer (closes on navigation, Esc or tapping outside).
+- **Overview** (`/admin-dashboard`, `?days=7|30|90` kept in the URL):
+  - KPI cards — Revenue, Orders, Products, Customers — each with ▲/▼ change vs the previous period.
+  - Revenue / Orders per day chart (one series at a time, hover or ←/→ keys for each day's values,
+    "View as table").
+  - Orders by status and payment methods (bar lists), top products, recent orders (table on desktop,
+    cards on phones), all-time sales, open orders and low stock.
+  - Skeleton on first load; on period change the old numbers stay (dimmed) until the new ones arrive;
+    errors show a "Try again" (a failed refresh keeps the last numbers); empty periods show clear messages.
 
 ### AI shopping assistant (`/api/chat/`)
 
@@ -310,3 +354,9 @@ cd frontend && npm run lint && npm run build                      # lint + produ
 - [x] Day 2 — Step 6: Integration and Responsive Testing
 - [x] Day 2 — Step 7: Security and Production Preparation
 - [x] Day 2 — Step 8: Demo Preparation (local demo)
+- [x] Admin dashboard redesign — Step 1: Admin shell (sidebar, top bar, mobile drawer)
+- [x] Admin dashboard redesign — Step 2: Overview (period KPIs, sales chart, breakdowns, recent orders)
+- [ ] Admin dashboard redesign — Step 3: Customer management
+- [ ] Admin dashboard redesign — Step 4: Payment management
+- [ ] Admin dashboard redesign — Step 5: Products / Categories / Orders in the new design
+- [ ] Admin dashboard redesign — Step 6: Final testing & docs

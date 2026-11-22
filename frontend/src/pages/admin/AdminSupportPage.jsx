@@ -217,7 +217,7 @@ export default function AdminSupportPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-14rem)] min-h-[32rem] overflow-hidden rounded-2xl border border-slate-200 bg-white">
+    <div className="flex h-[calc(100vh-8.5rem)] min-h-[28rem] lg:h-[calc(100vh-10rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white">
       {/* Conversation list */}
       <aside className={`w-full flex-col border-r border-slate-200 lg:flex lg:w-80 ${selected ? 'hidden' : 'flex'}`} aria-label="Conversations">
         <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-4 py-3">

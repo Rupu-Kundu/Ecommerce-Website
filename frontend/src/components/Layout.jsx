@@ -4,6 +4,8 @@ import ChatWidget from './ChatWidget'
 import Footer from './Footer'
 import Navbar from './Navbar'
 
+const STORE_TITLE = 'Haatbox — Shop smart, live better' // same as index.html
+
 export default function Layout() {
   const { pathname, hash } = useLocation()
 
@@ -12,6 +14,11 @@ export default function Layout() {
     if (!hash) window.scrollTo(0, 0)
   }, [pathname, hash])
 
+  // The admin dashboard sets its own tab title; store pages use the store title.
+  useEffect(() => {
+    document.title = STORE_TITLE
+  }, [])
+
   return (
     <div className="flex min-h-screen flex-col bg-slate-50">
       <Navbar />
@@ -19,8 +26,7 @@ export default function Layout() {
         <Outlet />
       </main>
       <Footer />
-      {/* Customer chat; the admin dashboard has its own Live chat inbox instead. */}
-      {!pathname.startsWith('/admin-dashboard') && <ChatWidget />}
+      <ChatWidget />
     </div>
   )
 }

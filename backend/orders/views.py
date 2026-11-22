@@ -12,6 +12,7 @@ from accounts.permissions import IsAdmin
 
 from products.models import LOW_STOCK_THRESHOLD, Product
 
+from .analytics import ALLOWED_DAYS, DEFAULT_DAYS, build_period_stats
 from .models import Order, OrderItem
 from .serializers import (
     AddressSerializer,
@@ -180,11 +181,21 @@ class OrderStatusUpdateView(APIView):
 
 
 class AdminStatsView(APIView):
-    """GET /api/admin/stats/ — numbers for the admin dashboard (admin only)."""
+    """
+    GET /api/admin/stats/?days=7|30|90 — numbers for the admin dashboard (admin only).
+
+    All-time figures (total_sales, order_count, …, recent_orders) plus analytics for the
+    chosen period (default 30 days) compared with the previous equivalent period:
+    period, kpis, daily, status_breakdown, payment_methods, top_products (see orders/analytics.py).
+    """
 
     permission_classes = [IsAdmin]
 
     def get(self, request):
+        raw_days = request.query_params.get("days", str(DEFAULT_DAYS))
+        if not raw_days.isdigit() or int(raw_days) not in ALLOWED_DAYS:
+            return Response({"days": f"Use one of {', '.join(map(str, ALLOWED_DAYS))}."}, status=status.HTTP_400_BAD_REQUEST)
+
         placed = Order.objects.filter(
             payment_status__in=Order.PLACED_PAYMENT_STATUSES
         )
@@ -211,4 +222,5 @@ class AdminStatsView(APIView):
             "low_stock_threshold": LOW_STOCK_THRESHOLD,
             "customer_count": get_user_model().objects.filter(is_staff=False).count(),
             "recent_orders": OrderSerializer(recent, many=True, context={"request": request}).data,
+            **build_period_stats(int(raw_days), request=request),
         })

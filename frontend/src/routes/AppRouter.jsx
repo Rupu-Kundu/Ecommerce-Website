@@ -1,11 +1,7 @@
+import { Suspense, lazy } from 'react'
 import { Route, Routes } from 'react-router-dom'
+import Loader from '../components/Loader'
 import Layout from '../components/Layout'
-import AdminCategoriesPage from '../pages/admin/AdminCategoriesPage'
-import AdminLayout from '../pages/admin/AdminLayout'
-import AdminOrdersPage from '../pages/admin/AdminOrdersPage'
-import AdminOverviewPage from '../pages/admin/AdminOverviewPage'
-import AdminProductsPage from '../pages/admin/AdminProductsPage'
-import AdminSupportPage from '../pages/admin/AdminSupportPage'
 import CartPage from '../pages/CartPage'
 import CheckoutPage from '../pages/CheckoutPage'
 import HelpPage from '../pages/HelpPage'
@@ -22,6 +18,14 @@ import ProductListPage from '../pages/ProductListPage'
 import RegisterPage from '../pages/RegisterPage'
 import GuestRoute from './GuestRoute'
 import ProtectedRoute from './ProtectedRoute'
+
+// The admin dashboard is only for admins, so its code is downloaded separately, on first visit.
+const AdminLayout = lazy(() => import('../pages/admin/AdminLayout'))
+const AdminOverviewPage = lazy(() => import('../pages/admin/AdminOverviewPage'))
+const AdminProductsPage = lazy(() => import('../pages/admin/AdminProductsPage'))
+const AdminCategoriesPage = lazy(() => import('../pages/admin/AdminCategoriesPage'))
+const AdminOrdersPage = lazy(() => import('../pages/admin/AdminOrdersPage'))
+const AdminSupportPage = lazy(() => import('../pages/admin/AdminSupportPage'))
 
 export default function AppRouter() {
   return (
@@ -52,18 +56,19 @@ export default function AppRouter() {
           <Route path="orders/:id" element={<OrderDetailPage />} />
         </Route>
 
-        {/* Admins only (customers are sent home, guests to /login) */}
-        <Route element={<ProtectedRoute adminOnly />}>
-          <Route path="admin-dashboard" element={<AdminLayout />}>
-            <Route index element={<AdminOverviewPage />} />
-            <Route path="products" element={<AdminProductsPage />} />
-            <Route path="categories" element={<AdminCategoriesPage />} />
-            <Route path="orders" element={<AdminOrdersPage />} />
-            <Route path="chat" element={<AdminSupportPage />} />
-          </Route>
-        </Route>
-
         <Route path="*" element={<NotFoundPage />} />
+      </Route>
+
+      {/* Admin dashboard: its own full-screen shell (sidebar + top bar), no store navbar/footer.
+          Admins only — customers are sent home, guests to /login. */}
+      <Route element={<ProtectedRoute adminOnly />}>
+        <Route path="admin-dashboard" element={<Suspense fallback={<Loader label="Loading admin…" />}><AdminLayout /></Suspense>}>
+          <Route index element={<AdminOverviewPage />} />
+          <Route path="products" element={<AdminProductsPage />} />
+          <Route path="categories" element={<AdminCategoriesPage />} />
+          <Route path="orders" element={<AdminOrdersPage />} />
+          <Route path="chat" element={<AdminSupportPage />} />
+        </Route>
       </Route>
     </Routes>
   )
