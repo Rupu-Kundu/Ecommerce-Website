@@ -1,6 +1,9 @@
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
 from django.db.models import Count, Prefetch, Q, Sum
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -103,11 +106,50 @@ def orders_for(user):
     return qs if user.is_staff else qs.filter(user=user)
 
 
+ORDER_ORDERINGS = {
+    "newest": ["-created_at", "-id"],
+    "oldest": ["created_at", "id"],
+    "total_high": ["-total_amount", "-created_at"],
+    "total_low": ["total_amount", "-created_at"],
+}
+ORDER_PERIODS = {"7": 7, "30": 30, "90": 90}
+
+
+def admin_order_filters(queryset, params):
+    """
+    Admin-only filters for GET /api/orders/:
+      ?customer=<user id>  ?search= (order number, customer username/email/name, recipient)
+      ?payment_method=card|bkash|nagad|cod  ?payment_status=paid|refunded|due
+      ?days=7|30|90  ?ordering=newest|oldest|total_high|total_low
+    """
+    customer = params.get("customer", "")
+    if customer.isdigit():
+        queryset = queryset.filter(user_id=int(customer))
+    search = params.get("search", "").strip()[:100]
+    if search:
+        q = (Q(user__username__icontains=search) | Q(user__email__icontains=search) | Q(user__first_name__icontains=search)
+             | Q(user__last_name__icontains=search) | Q(address__recipient_name__icontains=search))
+        if search.lstrip("#").isdigit():
+            q |= Q(pk=int(search.lstrip("#")))
+        queryset = queryset.filter(q)
+    method = params.get("payment_method")
+    if method in Order.PaymentMethod.values:
+        queryset = queryset.filter(payment_method=method)
+    pay_status = params.get("payment_status")
+    if pay_status in Order.PLACED_PAYMENT_STATUSES:
+        queryset = queryset.filter(payment_status=pay_status)
+    if params.get("days") in ORDER_PERIODS:
+        queryset = queryset.filter(created_at__gte=timezone.now() - timedelta(days=ORDER_PERIODS[params["days"]]))
+    if params.get("ordering") in ORDER_ORDERINGS:
+        queryset = queryset.order_by(*ORDER_ORDERINGS[params["ordering"]])
+    return queryset
+
+
 class OrderListCreateView(APIView):
     """
     GET  /api/orders/   order history — orders whose payment was received (paid, or
                         refunded) or confirmed cash on delivery. Unpaid or failed checkout
-                        attempts are not listed. Admin filters: ?status= &customer=<user id>
+                        attempts are not listed. Admin filters: ?status= + see admin_order_filters()
     POST /api/orders/   {shipping_method, payment_method, address | address_id, items?}
                         — create an order from the cart, or ("Buy now") from `items` only.
                         The order waits for payment; see /api/payments/.
@@ -119,10 +161,8 @@ class OrderListCreateView(APIView):
         status_filter = request.query_params.get("status")
         if status_filter in Order.Status.values:
             queryset = queryset.filter(status=status_filter)
-        # ?customer=<id> — one customer's orders (admin customer details page)
-        customer = request.query_params.get("customer", "")
-        if request.user.is_staff and customer.isdigit():
-            queryset = queryset.filter(user_id=int(customer))
+        if request.user.is_staff:
+            queryset = admin_order_filters(queryset, request.query_params)
         paginator = api_settings.DEFAULT_PAGINATION_CLASS()
         page = paginator.paginate_queryset(queryset, request, view=self)
         data = OrderSerializer(page, many=True, context={"request": request}).data
@@ -211,6 +251,7 @@ class AdminStatsView(APIView):
             # every product that needs restocking (same rule as ?low_stock=true)
             low_stock=Count("id", filter=Q(stock_quantity__lte=LOW_STOCK_THRESHOLD)),
             out_of_stock=Count("id", filter=Q(stock_quantity=0)),
+            hidden=Count("id", filter=Q(is_available=False)),
         )
         recent = orders_for(request.user).filter(pk__in=placed.values("pk"))[:5]
         return Response({
@@ -224,6 +265,7 @@ class AdminStatsView(APIView):
             "product_count": products["total"],
             "low_stock_count": products["low_stock"],
             "out_of_stock_count": products["out_of_stock"],
+            "hidden_product_count": products["hidden"],
             "low_stock_threshold": LOW_STOCK_THRESHOLD,
             "customer_count": get_user_model().objects.filter(is_staff=False).count(),
             "recent_orders": OrderSerializer(recent, many=True, context={"request": request}).data,

@@ -225,8 +225,10 @@ See [docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md) for setup and test credentials.
 | GET | `/api/admin/stats/?days=7\|30\|90` | Dashboard numbers: all-time totals + analytics for the period vs the previous one (see below) |
 | POST / PATCH / DELETE | `/api/categories/` · `/api/categories/<id>/` | Manage categories (delete refused while products use it) |
 | GET | `/api/products/?low_stock=true` | Products with 5 or fewer in stock |
+| GET | `/api/products/?available=true\|false&stock=in\|low\|out` | Admin list filters: visibility, and stock (in = 6+, low = 1–5, out = 0). Ignored for customers and guests (hidden products stay hidden) |
 | GET | `/api/orders/?status=shipped` | Filter orders by status |
 | GET | `/api/orders/?customer=<user id>` | One customer's orders (admin only; customers always see only their own) |
+| GET | `/api/orders/?search=&payment_method=&payment_status=&days=&ordering=` | Admin order filters: search (`#order`, customer username/email/name, recipient), `payment_method=card\|bkash\|nagad\|cod`, `payment_status=paid\|refunded\|due`, `days=7\|30\|90`, `ordering=newest\|oldest\|total_high\|total_low` |
 | GET | `/api/admin/customers/` | Customers (non-staff users): `?search=` (name, username, email, phone), `?status=active\|inactive`, `?orders=with\|without`, `?joined=7\|30\|90`, `?ordering=newest\|oldest\|spent\|orders\|recent_order\|name`, `?page=` (12 per page). Each row has `orders_count`, `total_spent` (paid orders), `last_order_at`; the response adds `summary` `{total, active, with_orders, new_last_30_days}` |
 | GET | `/api/admin/payments/` | Every payment attempt (read only): `?search=` (transaction id, `#order`, customer name/email), `?status=succeeded\|pending\|failed\|refunded`, `?method=card\|bkash\|nagad\|cod`, `?provider=stripe\|bkash\|nagad\|demo\|cod`, `?days=7\|30\|90`, `?order=<id>`, `?ordering=newest\|oldest\|amount_high\|amount_low`, `?page=`. Each row has the order and customer; the response adds `summary` `{total, succeeded, pending, failed, refunded (count + amount each), success_rate}` (all filters except status) |
 | GET | `/api/admin/payments/<id>/` | One transaction + `order_detail` (items, totals, address) + `customer` + `other_attempts` for the same order. POST/PUT/PATCH/DELETE → 405 (money only moves through checkout) |
@@ -241,7 +243,7 @@ orders, users and products (`backend/orders/analytics.py`).
 
 | Field | Meaning |
 |---|---|
-| `total_sales`, `sales_count`, `order_count`, `open_orders`, `orders_by_status`, `product_count`, `low_stock_count`, `out_of_stock_count`, `low_stock_threshold`, `customer_count`, `recent_orders` | All-time figures (unchanged from before) |
+| `total_sales`, `sales_count`, `order_count`, `open_orders`, `orders_by_status`, `product_count`, `low_stock_count`, `out_of_stock_count`, `hidden_product_count`, `low_stock_threshold`, `customer_count`, `recent_orders` | All-time figures |
 | `period` | `{days, start, end, previous_start, previous_end}` (local dates) |
 | `kpis.revenue` | Sum of **paid** orders in the period (cash on delivery counts once delivered) |
 | `kpis.orders` | Orders really placed (paid, refunded, or confirmed cash on delivery); unpaid attempts are ignored |
@@ -267,6 +269,19 @@ the store's navbar/footer. Its code is lazy-loaded, so store visitors never down
 - **Admin shell:** sidebar grouped into Overview / Sales / Catalog / Customers, current page highlighted,
   unread live-chat badge; top bar with page title, chat bell and account menu (View store, Logout).
   On phones the sidebar becomes a ☰ drawer (closes on navigation, Esc or tapping outside).
+- **Products** (`/admin-dashboard/products`): summary cards (products, hidden, restock ≤ 5, out of stock — click
+  to filter), search + category / visibility / stock / sort (9 orders) kept in the URL (the old `?low_stock=true`
+  link still works), table with photo, brand, stock and rating badges on desktop / cards on phones, pagination.
+  Actions: **Add / Edit** (the product form with brand, details table and gallery photos), **Hide / Show** and
+  **Delete** (with confirmation).
+- **Categories** (`/admin-dashboard/categories`): summary (categories, products in them, empty categories),
+  search, "with products / empty" filter and sort, paged list with product counts (link to those products),
+  add / edit form; deleting a category that still has products is refused with a clear message.
+- **Orders** (`/admin-dashboard/orders`): status tabs with counts, search (#order, customer, recipient) +
+  payment method / payment status / period / sort, inline status change (server rules: cash-on-delivery orders
+  never become "Paid" by hand; Delivered = cash collected), table / cards, pagination. **Order details drawer**
+  (`?order=<id>`, survives refresh): status picker with progress, customer, items with photos and totals,
+  delivery address + map pin, and every payment attempt (opens the payment drawer).
 - **Payments** (`/admin-dashboard/payments`): summary cards (received, pending, failed, refunded — click to
   filter — and success rate), search + status / method / gateway / period / sort filters kept in the URL,
   table on desktop / cards on phones, pagination. Clicking a payment opens a **details drawer**
@@ -372,5 +387,5 @@ cd frontend && npm run lint && npm run build                      # lint + produ
 - [x] Admin dashboard redesign — Step 2: Overview (period KPIs, sales chart, breakdowns, recent orders)
 - [x] Admin dashboard redesign — Step 3: Customer management
 - [x] Admin dashboard redesign — Step 4: Payment management
-- [ ] Admin dashboard redesign — Step 5: Products / Categories / Orders in the new design
+- [x] Admin dashboard redesign — Step 5: Products / Categories / Orders in the new design
 - [ ] Admin dashboard redesign — Step 6: Final testing & docs

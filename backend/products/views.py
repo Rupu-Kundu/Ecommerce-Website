@@ -87,6 +87,18 @@ class ProductViewSet(viewsets.ModelViewSet):
         # ?low_stock=true — products at or below the low-stock threshold (admin dashboard)
         if self.request.query_params.get("low_stock") in ("1", "true"):
             qs = qs.filter(stock_quantity__lte=LOW_STOCK_THRESHOLD)
+        if user.is_authenticated and user.is_staff:
+            # Admin product list filters: ?available=true|false  ?stock=in|low|out
+            available = self.request.query_params.get("available")
+            if available in ("true", "false"):
+                qs = qs.filter(is_available=available == "true")
+            stock = self.request.query_params.get("stock")
+            if stock == "out":
+                qs = qs.filter(stock_quantity=0)
+            elif stock == "low":
+                qs = qs.filter(stock_quantity__gt=0, stock_quantity__lte=LOW_STOCK_THRESHOLD)
+            elif stock == "in":
+                qs = qs.filter(stock_quantity__gt=LOW_STOCK_THRESHOLD)
         return qs
 
     # ---------- gallery photos (admin) ----------
