@@ -226,6 +226,9 @@ See [docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md) for setup and test credentials.
 | POST / PATCH / DELETE | `/api/categories/` · `/api/categories/<id>/` | Manage categories (delete refused while products use it) |
 | GET | `/api/products/?low_stock=true` | Products with 5 or fewer in stock |
 | GET | `/api/orders/?status=shipped` | Filter orders by status |
+| GET | `/api/orders/?customer=<user id>` | One customer's orders (admin only; customers always see only their own) |
+| GET | `/api/admin/customers/` | Customers (non-staff users): `?search=` (name, username, email, phone), `?status=active\|inactive`, `?orders=with\|without`, `?joined=7\|30\|90`, `?ordering=newest\|oldest\|spent\|orders\|recent_order\|name`, `?page=` (12 per page). Each row has `orders_count`, `total_spent` (paid orders), `last_order_at`; the response adds `summary` `{total, active, with_orders, new_last_30_days}` |
+| GET | `/api/admin/customers/<id>/` | Profile + `stats` (orders, paid orders, total spent, average order, first/last order, open, cancelled, cash on delivery still due), saved `addresses`, `reviews_count`, `chats_count`. Staff accounts → 404 |
 
 #### `GET /api/admin/stats/?days=` — dashboard analytics
 
@@ -262,6 +265,10 @@ the store's navbar/footer. Its code is lazy-loaded, so store visitors never down
 - **Admin shell:** sidebar grouped into Overview / Sales / Catalog / Customers, current page highlighted,
   unread live-chat badge; top bar with page title, chat bell and account menu (View store, Logout).
   On phones the sidebar becomes a ☰ drawer (closes on navigation, Esc or tapping outside).
+- **Customers** (`/admin-dashboard/customers`): summary chips, search-as-you-type, filters (status, has ordered,
+  joined) and sort in one row — all kept in the URL — table on desktop / cards on phones, pagination.
+  **Customer details** (`/admin-dashboard/customers/<id>`): profile, order stats, paginated order history (from the
+  existing orders API), saved addresses, activity. Loading skeletons, empty states, error + "Try again", "Customer not found".
 - **Overview** (`/admin-dashboard`, `?days=7|30|90` kept in the URL):
   - KPI cards — Revenue, Orders, Products, Customers — each with ▲/▼ change vs the previous period.
   - Revenue / Orders per day chart (one series at a time, hover or ←/→ keys for each day's values,
@@ -356,7 +363,7 @@ cd frontend && npm run lint && npm run build                      # lint + produ
 - [x] Day 2 — Step 8: Demo Preparation (local demo)
 - [x] Admin dashboard redesign — Step 1: Admin shell (sidebar, top bar, mobile drawer)
 - [x] Admin dashboard redesign — Step 2: Overview (period KPIs, sales chart, breakdowns, recent orders)
-- [ ] Admin dashboard redesign — Step 3: Customer management
+- [x] Admin dashboard redesign — Step 3: Customer management
 - [ ] Admin dashboard redesign — Step 4: Payment management
 - [ ] Admin dashboard redesign — Step 5: Products / Categories / Orders in the new design
 - [ ] Admin dashboard redesign — Step 6: Final testing & docs

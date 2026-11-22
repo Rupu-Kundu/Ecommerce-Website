@@ -81,3 +81,16 @@ export async function uploadProductImage(productId, file, altText = '') {
 export async function deleteProductImage(productId, imageId) {
   await api.delete(`/products/${productId}/images/${imageId}/`)
 }
+
+// ---- Customers ----
+/** params: {search, status: 'active'|'inactive', orders: 'with'|'without', joined: 7|30|90, ordering, page} */
+export async function getAdminCustomers(params = {}) {
+  const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== '' && v != null))
+  const { data } = await api.get('/admin/customers/', { params: clean })
+  return data
+}
+
+export async function getAdminCustomer(id) {
+  const { data } = await api.get(`/admin/customers/${id}/`)
+  return data
+}

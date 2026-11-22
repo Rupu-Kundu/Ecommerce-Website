@@ -4,6 +4,7 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
+from accounts.admin_views import AdminCustomerDetailView, AdminCustomerListView
 from orders.urls import order_urlpatterns
 from orders.views import AdminStatsView
 
@@ -18,6 +19,8 @@ urlpatterns = [
     path('api/chat/', include('assistant.urls')),
     path('api/support/', include('support.urls')),
     path('api/admin/stats/', AdminStatsView.as_view(), name='admin-stats'),
+    path('api/admin/customers/', AdminCustomerListView.as_view(), name='admin-customers'),
+    path('api/admin/customers/<int:pk>/', AdminCustomerDetailView.as_view(), name='admin-customer-detail'),
 ]
 
 # Serve uploaded media files during development only

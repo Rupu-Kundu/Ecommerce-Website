@@ -106,7 +106,8 @@ def orders_for(user):
 class OrderListCreateView(APIView):
     """
     GET  /api/orders/   order history — orders whose payment was received (paid, or
-                        refunded). Unpaid or failed checkout attempts are not listed.
+                        refunded) or confirmed cash on delivery. Unpaid or failed checkout
+                        attempts are not listed. Admin filters: ?status= &customer=<user id>
     POST /api/orders/   {shipping_method, payment_method, address | address_id, items?}
                         — create an order from the cart, or ("Buy now") from `items` only.
                         The order waits for payment; see /api/payments/.
@@ -118,6 +119,10 @@ class OrderListCreateView(APIView):
         status_filter = request.query_params.get("status")
         if status_filter in Order.Status.values:
             queryset = queryset.filter(status=status_filter)
+        # ?customer=<id> — one customer's orders (admin customer details page)
+        customer = request.query_params.get("customer", "")
+        if request.user.is_staff and customer.isdigit():
+            queryset = queryset.filter(user_id=int(customer))
         paginator = api_settings.DEFAULT_PAGINATION_CLASS()
         page = paginator.paginate_queryset(queryset, request, view=self)
         data = OrderSerializer(page, many=True, context={"request": request}).data

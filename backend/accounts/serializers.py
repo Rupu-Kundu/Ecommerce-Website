@@ -64,3 +64,26 @@ class LoginSerializer(TokenObtainPairSerializer):
 
 class LogoutSerializer(serializers.Serializer):
     refresh = serializers.CharField()
+
+
+# ---------------- Admin: customers ----------------
+
+
+class AdminCustomerSerializer(serializers.ModelSerializer):
+    """One row of the admin customer list (numbers come from queryset annotations)."""
+
+    full_name = serializers.SerializerMethodField()
+    orders_count = serializers.IntegerField(read_only=True)
+    total_spent = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    last_order_at = serializers.DateTimeField(read_only=True, allow_null=True)
+
+    class Meta:
+        model = User
+        fields = (
+            "id", "username", "email", "full_name", "phone", "is_active",
+            "date_joined", "last_login", "orders_count", "total_spent", "last_order_at",
+        )
+        read_only_fields = fields
+
+    def get_full_name(self, obj):
+        return obj.get_full_name()

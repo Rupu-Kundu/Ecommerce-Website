@@ -22,7 +22,10 @@ const NAV = [
   },
   {
     group: 'Customers',
-    items: [{ to: '/admin-dashboard/chat', label: 'Live chat', icon: 'chat', badge: 'chat' }],
+    items: [
+      { to: '/admin-dashboard/customers', label: 'Customers', icon: 'customers' },
+      { to: '/admin-dashboard/chat', label: 'Live chat', icon: 'chat', badge: 'chat' },
+    ],
   },
 ]
 
