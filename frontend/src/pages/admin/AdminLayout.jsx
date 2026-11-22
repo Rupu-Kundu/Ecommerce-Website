@@ -11,7 +11,10 @@ const NAV = [
   { group: 'Overview', items: [{ to: '/admin-dashboard', label: 'Dashboard', icon: 'dashboard', end: true }] },
   {
     group: 'Sales',
-    items: [{ to: '/admin-dashboard/orders', label: 'Orders', icon: 'orders' }],
+    items: [
+      { to: '/admin-dashboard/orders', label: 'Orders', icon: 'orders' },
+      { to: '/admin-dashboard/payments', label: 'Payments', icon: 'payments' },
+    ],
   },
   {
     group: 'Catalog',

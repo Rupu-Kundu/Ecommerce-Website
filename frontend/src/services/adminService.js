@@ -94,3 +94,16 @@ export async function getAdminCustomer(id) {
   const { data } = await api.get(`/admin/customers/${id}/`)
   return data
 }
+
+// ---- Payments (read only) ----
+/** params: {search, status, method, provider, days, order, ordering, page} → {count, results, summary} */
+export async function getAdminPayments(params = {}) {
+  const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== '' && v != null))
+  const { data } = await api.get('/admin/payments/', { params: clean })
+  return data
+}
+
+export async function getAdminPayment(id) {
+  const { data } = await api.get(`/admin/payments/${id}/`)
+  return data
+}

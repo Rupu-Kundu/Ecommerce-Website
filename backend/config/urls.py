@@ -7,6 +7,7 @@ from django.urls import include, path
 from accounts.admin_views import AdminCustomerDetailView, AdminCustomerListView
 from orders.urls import order_urlpatterns
 from orders.views import AdminStatsView
+from payments.admin_views import AdminPaymentDetailView, AdminPaymentListView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -21,6 +22,8 @@ urlpatterns = [
     path('api/admin/stats/', AdminStatsView.as_view(), name='admin-stats'),
     path('api/admin/customers/', AdminCustomerListView.as_view(), name='admin-customers'),
     path('api/admin/customers/<int:pk>/', AdminCustomerDetailView.as_view(), name='admin-customer-detail'),
+    path('api/admin/payments/', AdminPaymentListView.as_view(), name='admin-payments'),
+    path('api/admin/payments/<int:pk>/', AdminPaymentDetailView.as_view(), name='admin-payment-detail'),
 ]
 
 # Serve uploaded media files during development only

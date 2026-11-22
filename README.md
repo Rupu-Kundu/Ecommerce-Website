@@ -228,6 +228,8 @@ See [docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md) for setup and test credentials.
 | GET | `/api/orders/?status=shipped` | Filter orders by status |
 | GET | `/api/orders/?customer=<user id>` | One customer's orders (admin only; customers always see only their own) |
 | GET | `/api/admin/customers/` | Customers (non-staff users): `?search=` (name, username, email, phone), `?status=active\|inactive`, `?orders=with\|without`, `?joined=7\|30\|90`, `?ordering=newest\|oldest\|spent\|orders\|recent_order\|name`, `?page=` (12 per page). Each row has `orders_count`, `total_spent` (paid orders), `last_order_at`; the response adds `summary` `{total, active, with_orders, new_last_30_days}` |
+| GET | `/api/admin/payments/` | Every payment attempt (read only): `?search=` (transaction id, `#order`, customer name/email), `?status=succeeded\|pending\|failed\|refunded`, `?method=card\|bkash\|nagad\|cod`, `?provider=stripe\|bkash\|nagad\|demo\|cod`, `?days=7\|30\|90`, `?order=<id>`, `?ordering=newest\|oldest\|amount_high\|amount_low`, `?page=`. Each row has the order and customer; the response adds `summary` `{total, succeeded, pending, failed, refunded (count + amount each), success_rate}` (all filters except status) |
+| GET | `/api/admin/payments/<id>/` | One transaction + `order_detail` (items, totals, address) + `customer` + `other_attempts` for the same order. POST/PUT/PATCH/DELETE → 405 (money only moves through checkout) |
 | GET | `/api/admin/customers/<id>/` | Profile + `stats` (orders, paid orders, total spent, average order, first/last order, open, cancelled, cash on delivery still due), saved `addresses`, `reviews_count`, `chats_count`. Staff accounts → 404 |
 
 #### `GET /api/admin/stats/?days=` — dashboard analytics
@@ -265,6 +267,11 @@ the store's navbar/footer. Its code is lazy-loaded, so store visitors never down
 - **Admin shell:** sidebar grouped into Overview / Sales / Catalog / Customers, current page highlighted,
   unread live-chat badge; top bar with page title, chat bell and account menu (View store, Logout).
   On phones the sidebar becomes a ☰ drawer (closes on navigation, Esc or tapping outside).
+- **Payments** (`/admin-dashboard/payments`): summary cards (received, pending, failed, refunded — click to
+  filter — and success rate), search + status / method / gateway / period / sort filters kept in the URL,
+  table on desktop / cards on phones, pagination. Clicking a payment opens a **details drawer**
+  (`?payment=<id>`, survives refresh): amount and status, transaction id (copy), gateway, order items and
+  totals, delivery address, customer (link to their page) and the order's other payment attempts.
 - **Customers** (`/admin-dashboard/customers`): summary chips, search-as-you-type, filters (status, has ordered,
   joined) and sort in one row — all kept in the URL — table on desktop / cards on phones, pagination.
   **Customer details** (`/admin-dashboard/customers/<id>`): profile, order stats, paginated order history (from the
@@ -364,6 +371,6 @@ cd frontend && npm run lint && npm run build                      # lint + produ
 - [x] Admin dashboard redesign — Step 1: Admin shell (sidebar, top bar, mobile drawer)
 - [x] Admin dashboard redesign — Step 2: Overview (period KPIs, sales chart, breakdowns, recent orders)
 - [x] Admin dashboard redesign — Step 3: Customer management
-- [ ] Admin dashboard redesign — Step 4: Payment management
+- [x] Admin dashboard redesign — Step 4: Payment management
 - [ ] Admin dashboard redesign — Step 5: Products / Categories / Orders in the new design
 - [ ] Admin dashboard redesign — Step 6: Final testing & docs

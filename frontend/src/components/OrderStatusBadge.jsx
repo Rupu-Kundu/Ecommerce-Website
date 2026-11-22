@@ -6,6 +6,7 @@ const STYLES = {
   delivered: 'bg-emerald-100 text-emerald-900 ring-emerald-300',
   cancelled: 'bg-red-50 text-red-700 ring-red-200',
   failed: 'bg-red-50 text-red-700 ring-red-200',
+  succeeded: 'bg-emerald-50 text-emerald-800 ring-emerald-200', // payment
   refunded: 'bg-amber-50 text-amber-800 ring-amber-200',
   due: 'bg-orange-50 text-orange-800 ring-orange-200', // cash on delivery, not collected yet
 }
