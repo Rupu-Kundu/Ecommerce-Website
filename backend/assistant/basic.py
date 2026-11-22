@@ -67,6 +67,7 @@ can could would like hi hello hey also more other something anything thing thing
 
 INTENTS = [
     ("human", r"\b(human|person|agent|representative|staff|someone real|real person|talk to (a|someone))\b|মানুষ|এজেন্ট|প্রতিনিধি|কারো সাথে কথা|লাইভ চ্যাট"),
+    ("cancel", r"\b(cancel\w*)\b|ক্যানসেল|বাতিল|cancel kor"),
     ("add_cart", r"\badd\b.*\bcart\b|\bcart\b.*\badd\b|কার্টে|কার্ট এ|cart e"),
     ("orders", r"\b(my orders?|order status|track|where is my|order kothay|amar order)\b|অর্ডার|ট্র্যাক"),
     ("returns", r"\b(return|refund|exchange|replace|damaged|broken|torn|defective|wrong item)\b|ফেরত|রিটার্ন|রিফান্ড|বদল|ভাঙা|ছেঁড়া|নষ্ট"),
@@ -221,6 +222,15 @@ def _cod(r, text):
     )
 
 
+def _cancel(r, text):
+    return r.t(
+        "**ক্যাশ অন ডেলিভারি** অর্ডার শিপ হওয়ার আগ পর্যন্ত নিজেই বাতিল করতে পারবেন: [My orders](/orders) → অর্ডার খুলুন → **Cancel order**। কোনো টাকা দিতে হবে না।\n\n"
+        "অনলাইনে পেমেন্ট করা অর্ডার বাতিল বা রিফান্ডের জন্য আমাদের টিম সাহায্য করবে। ",
+        "**Cash-on-delivery** orders can be cancelled by you until they ship: [My orders](/orders) → open the order → **Cancel order**. Nothing to pay.\n\n"
+        "For orders already paid online (Card, bKash, Nagad), our team will help with the cancellation and refund. ",
+    ) + r.team_line()
+
+
 def _returns(r, text):
     return r.t(
         "ডেলিভারির ৭ দিনের মধ্যে অব্যবহৃত পণ্য আসল প্যাকেটে ফেরত দেওয়া যায়। ভাঙা বা ভুল পণ্য এলে আমাদের টিম দ্রুত সমাধান করবে।\n\n",
@@ -305,7 +315,7 @@ def _products(r, text):
 
 
 HANDLERS = {
-    "human": _human, "add_cart": _add_cart, "orders": _orders, "returns": _returns, "shipping": _shipping,
+    "human": _human, "cancel": _cancel, "add_cart": _add_cart, "orders": _orders, "returns": _returns, "shipping": _shipping,
     "payment": _payment, "cod": _cod, "store": _store, "categories": _categories, "thanks": _thanks, "greeting": _greeting,
 }
 

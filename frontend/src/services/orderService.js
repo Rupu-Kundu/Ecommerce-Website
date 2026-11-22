@@ -16,3 +16,9 @@ export async function getOrder(id) {
   const { data } = await api.get(`/orders/${id}/`)
   return data
 }
+
+/** Cancel your own cash-on-delivery order (until it ships) → updated order */
+export async function cancelOrder(id) {
+  const { data } = await api.post(`/orders/${id}/cancel/`)
+  return data
+}

@@ -186,3 +186,29 @@ def change_order_status(order, new_status):
             cod_payments.update(status=Payment.Status.FAILED)
     order.save(update_fields=fields)
     return order
+
+
+class CannotCancel(Exception):
+    """The customer can no longer cancel this order; the message is safe to show."""
+
+
+def customer_can_cancel(order):
+    """Cash-on-delivery orders can be cancelled by the customer until they are shipped."""
+    return (
+        order.payment_method == Order.PaymentMethod.COD
+        and order.payment_status == Order.PaymentStatus.DUE
+        and order.status in (Order.Status.PAID, Order.Status.PROCESSING)
+    )
+
+
+@transaction.atomic
+def cancel_by_customer(order):
+    """Customer cancels their COD order: status Cancelled, reserved stock goes back."""
+    order = Order.objects.select_for_update().get(pk=order.pk)  # re-check under lock (admin may be shipping it)
+    if order.status == Order.Status.CANCELLED:
+        raise CannotCancel(f"Order #{order.pk} is already cancelled.")
+    if not customer_can_cancel(order):
+        if order.payment_method != Order.PaymentMethod.COD:
+            raise CannotCancel("Only cash-on-delivery orders can be cancelled here. Please contact support for help with this order.")
+        raise CannotCancel(f"Order #{order.pk} has already been {order.get_status_display().lower()}, so it can't be cancelled. Please contact support.")
+    return change_order_status(order, Order.Status.CANCELLED)

@@ -131,8 +131,9 @@ class OrderSerializer(serializers.ModelSerializer):
     item_count = serializers.SerializerMethodField()
     customer = serializers.SerializerMethodField()
     status_label = serializers.CharField(source="get_status_display", read_only=True)
-    payment_status_label = serializers.CharField(source="get_payment_status_display", read_only=True)
+    payment_status_label = serializers.SerializerMethodField()
     payment_method_label = serializers.CharField(source="get_payment_method_display", read_only=True)
+    can_cancel = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -140,12 +141,22 @@ class OrderSerializer(serializers.ModelSerializer):
             "id", "status", "status_label", "payment_status", "payment_status_label",
             "payment_method", "payment_method_label", "from_cart",
             "subtotal", "shipping_method", "shipping_method_label", "shipping_cost", "total_amount",
-            "item_count", "items", "address", "customer", "created_at", "updated_at",
+            "item_count", "items", "address", "customer", "can_cancel", "created_at", "updated_at",
         )
         read_only_fields = fields
 
     def get_shipping_method_label(self, obj):
         return _METHODS.get(obj.shipping_method, {}).get("label", obj.shipping_method)
+
+    def get_payment_status_label(self, obj):
+        if obj.payment_status == Order.PaymentStatus.DUE and obj.status == Order.Status.CANCELLED:
+            return "Nothing to pay"  # cancelled cash-on-delivery order
+        return obj.get_payment_status_display()
+
+    def get_can_cancel(self, obj):
+        from .services import customer_can_cancel
+
+        return customer_can_cancel(obj)
 
     def get_item_count(self, obj):
         return sum(item.quantity for item in obj.items.all())

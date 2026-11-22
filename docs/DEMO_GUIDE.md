@@ -58,7 +58,8 @@ The command refuses to run when `DJANGO_DEBUG=False`.
 
 At checkout the customer picks **Card**, **bKash**, **Nagad** or **COD (cash on delivery)**.
 With COD the button reads *Place order · Pay ৳… on delivery*; the order is placed at once (no payment page) and the order
-page says "Pay on delivery". In *Admin → Orders* set it to **Delivered** ("cash collected") or **Cancelled** (stock returned). **Buy now** (on product cards and product pages)
+page says "Pay on delivery". The customer can press **Cancel order** there (with a confirmation) until it ships, and the stock goes back.
+In *Admin → Orders* set it to **Delivered** ("cash collected") or **Cancelled** (stock returned). **Buy now** (on product cards and product pages)
 skips the cart and checks out just that product.
 
 - **Default, demo gateway:** any method without credentials opens a simulated page. Nothing typed there is sent anywhere.

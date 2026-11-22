@@ -5,7 +5,7 @@ import Loader from '../components/Loader'
 import OrderStatusBadge from '../components/OrderStatusBadge'
 import ProductImage from '../components/ProductImage'
 import { getErrorMessage } from '../services/api'
-import { getOrder } from '../services/orderService'
+import { cancelOrder, getOrder } from '../services/orderService'
 import { formatDate, formatPrice } from '../utils/format'
 import NotFoundPage from './NotFoundPage'
 import { LazyLocationMap } from '../components/map/LazyMaps'
@@ -16,6 +16,27 @@ export default function OrderDetailPage() {
   const { id } = useParams()
   const [params] = useSearchParams()
   const justPlacedCod = params.get('placed') === 'cod'
+  const [confirmCancel, setConfirmCancel] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+  const [cancelError, setCancelError] = useState('')
+  const [cancelled, setCancelled] = useState(false)
+
+  async function handleCancel() {
+    setCancelling(true)
+    setCancelError('')
+    try {
+      setOrder(await cancelOrder(order.id))
+      setCancelled(true)
+      setConfirmCancel(false)
+    } catch (err) {
+      setCancelError(getErrorMessage(err, 'Could not cancel the order. Please try again.'))
+      setConfirmCancel(false)
+      // the order may have changed meanwhile (e.g. just shipped) — show the latest state
+      getOrder(order.id).then(setOrder).catch(() => {})
+    } finally {
+      setCancelling(false)
+    }
+  }
   const [order, setOrder] = useState(null)
   const [error, setError] = useState('')
   const [notFound, setNotFound] = useState(false)
@@ -50,12 +71,19 @@ export default function OrderDetailPage() {
         <span>Order #{order.id}</span>
       </nav>
 
-      {justPlacedCod && (
+      {justPlacedCod && !cancelled && order.status !== 'cancelled' && (
         <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900" role="status" data-testid="cod-placed">
           <p className="font-bold">🎉 Order placed! Thank you.</p>
           <p className="mt-1 text-sm">
             Please keep <strong>{formatPrice(order.total_amount)}</strong> ready and pay the rider in cash when your order arrives.
+            {' '}Changed your mind? You can cancel until the order ships.
           </p>
+        </div>
+      )}
+      {cancelled && (
+        <div className="mb-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-slate-800" role="status" data-testid="order-cancelled">
+          <p className="font-bold">Your order has been cancelled.</p>
+          <p className="mt-1 text-sm">Nothing to pay. <Link to="/products" className="font-semibold text-brand-700 hover:underline">Continue shopping</Link></p>
         </div>
       )}
       <div className="flex flex-wrap items-center gap-3">
@@ -69,6 +97,39 @@ export default function OrderDetailPage() {
         <span className="font-medium text-slate-700" data-testid="payment-status">{order.payment_status_label}</span>
         {' '}· <span className="font-medium text-slate-700" data-testid="payment-method">{order.payment_method_label}</span>
       </p>
+
+      {order.can_cancel && (
+        <div className="mt-4" data-testid="cancel-order">
+          {!confirmCancel ? (
+            <button
+              type="button"
+              onClick={() => {
+                setConfirmCancel(true)
+                setCancelError('')
+              }}
+              className="rounded-full border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
+            >
+              Cancel order
+            </button>
+          ) : (
+            <div role="alertdialog" aria-labelledby="cancel-title" aria-describedby="cancel-desc" className="max-w-md rounded-2xl border border-red-200 bg-red-50 p-4">
+              <p id="cancel-title" className="font-semibold text-red-900">Cancel order #{order.id}?</p>
+              <p id="cancel-desc" className="mt-1 text-sm text-red-800">
+                The items go back to our stock and you won't need to pay anything. This can't be undone.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button type="button" onClick={handleCancel} disabled={cancelling} className="rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60">
+                  {cancelling ? 'Cancelling…' : 'Yes, cancel order'}
+                </button>
+                <button type="button" onClick={() => setConfirmCancel(false)} disabled={cancelling} className="rounded-full px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white">
+                  Keep my order
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {cancelError && <p role="alert" className="mt-3 text-sm text-red-600">{cancelError}</p>}
 
       {stepIndex >= 0 && (
         <ol className="mt-6 grid grid-cols-4 gap-2" aria-label="Order progress">

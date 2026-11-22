@@ -50,6 +50,7 @@ Use this before every deployment. "✅" items are already handled in the code. "
 
 - ✅ Cash on delivery: the server re-checks stock and reserves it under a row lock, enforces `COD_MAX_AMOUNT`, and only the
   order's owner can place it. Payment becomes *Paid* only when an admin marks the order Delivered; cancelling returns the stock once.
+- ✅ Customer cancel: only the order's owner (others get 404), only cash-on-delivery orders, only before shipping. Re-checked under a row lock so it can't race with the admin shipping it.
 - ✅ Card details never touch the server (Stripe Checkout hosted page, or the demo gateway that takes no card data).
 - ✅ Payment success is verified with Stripe on the server, never trusted from the browser.
 - ✅ Stripe webhooks are rejected unless the `Stripe-Signature` matches `STRIPE_WEBHOOK_SECRET`.

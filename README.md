@@ -142,7 +142,8 @@ Guests and customers only see products with `is_available=true`; admins see all.
 **Cash on delivery (COD):** customers can choose *COD* at checkout (orders up to `COD_MAX_AMOUNT`, default ৳50,000;
 switch off with `PAYMENTS_ALLOW_COD=False`). The order is confirmed straight away and stock is reserved. When the admin
 marks it **Delivered**, the payment becomes *Paid* (cash collected). **Cancelled** returns the stock, and a cancelled COD
-order can't be reopened.
+order can't be reopened. **Customers can cancel their own COD order** until it ships: *My orders → order → Cancel order*
+(`POST /api/orders/<id>/cancel/`; the order's `can_cancel` says whether the button is shown).
 
 **Categories:** Electronics, Clothing, Shoes, Watches, Earbuds & Audio, Perfumes, Beauty & Personal Care, Books,
 Home & Kitchen, Home Decor, Sports & Outdoors, Cat Supplies, Medical & Health, Baby Products.

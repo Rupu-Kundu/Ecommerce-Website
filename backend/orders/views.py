@@ -19,7 +19,15 @@ from .serializers import (
     OrderSerializer,
     OrderStatusUpdateSerializer,
 )
-from .services import change_order_status, CheckoutProblem, create_order, prepare_buy_now, prepare_checkout
+from .services import (
+    CannotCancel,
+    CheckoutProblem,
+    cancel_by_customer,
+    change_order_status,
+    create_order,
+    prepare_buy_now,
+    prepare_checkout,
+)
 from .shipping import SHIPPING_METHODS, shipping_methods_payload
 
 # ---------------- Checkout (Day 2 · Step 2) ----------------
@@ -135,6 +143,22 @@ class OrderDetailView(APIView):
 
     def get(self, request, pk):
         order = get_object_or_404(orders_for(request.user), pk=pk)
+        return Response(OrderSerializer(order, context={"request": request}).data)
+
+
+class OrderCancelView(APIView):
+    """
+    POST /api/orders/<id>/cancel/ — the customer cancels their own cash-on-delivery order
+    (allowed until it is shipped). The reserved stock is returned.
+    """
+
+    def post(self, request, pk):
+        order = get_object_or_404(Order, pk=pk, user=request.user)  # only your own orders
+        try:
+            cancel_by_customer(order)
+        except CannotCancel as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        order = orders_for(request.user).get(pk=order.pk)
         return Response(OrderSerializer(order, context={"request": request}).data)
 
 
